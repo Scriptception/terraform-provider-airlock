@@ -1,6 +1,9 @@
 package client
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type application struct {
 	ApplicationID string `json:"applicationid"`
@@ -53,6 +56,10 @@ func (c *Client) ListApplications(ctx context.Context) ([]Named, error) {
 }
 
 func (c *Client) CreateApplication(ctx context.Context, name, version, categoryID string) (string, error) {
+	before, err := c.ListApplications(ctx)
+	if err != nil {
+		return "", err
+	}
 	var out struct {
 		ApplicationID string `json:"applicationid"`
 	}
@@ -66,10 +73,7 @@ func (c *Client) CreateApplication(ctx context.Context, name, version, categoryI
 	if err != nil {
 		return "", err
 	}
-	if item, ok := FindByName(items, name); ok {
-		return item.ID, nil
-	}
-	return "", nil
+	return createdNamedID(before, items, name, map[string]string{"version": version})
 }
 func (c *Client) DeleteApplication(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/application/delete", Values("applicationid", id), nil, nil)
@@ -96,6 +100,10 @@ func (c *Client) ListApplicationCategories(ctx context.Context) ([]Named, error)
 	return sortNamed(items), nil
 }
 func (c *Client) CreateApplicationCategory(ctx context.Context, name, parentID string) (string, error) {
+	before, err := c.ListApplicationCategories(ctx)
+	if err != nil {
+		return "", err
+	}
 	var out struct {
 		SubcategoryID string `json:"subcategoryid"`
 	}
@@ -109,12 +117,7 @@ func (c *Client) CreateApplicationCategory(ctx context.Context, name, parentID s
 	if err != nil {
 		return "", err
 	}
-	for _, item := range items {
-		if item.Name == name && item.Attrs["parent_category_id"] == parentID {
-			return item.ID, nil
-		}
-	}
-	return "", nil
+	return createdNamedID(before, items, name, map[string]string{"parent_category_id": parentID})
 }
 func (c *Client) DeleteApplicationCategory(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/application/categories/delete", Values("categoryid", id), nil, nil)
@@ -134,6 +137,10 @@ func (c *Client) ListBaselines(ctx context.Context) ([]Named, error) {
 	return sortNamed(items), nil
 }
 func (c *Client) CreateBaseline(ctx context.Context, name string) (string, error) {
+	before, err := c.ListBaselines(ctx)
+	if err != nil {
+		return "", err
+	}
 	var out struct {
 		BaselineID string `json:"baselineid"`
 	}
@@ -147,10 +154,7 @@ func (c *Client) CreateBaseline(ctx context.Context, name string) (string, error
 	if err != nil {
 		return "", err
 	}
-	if item, ok := FindByName(items, name); ok {
-		return item.ID, nil
-	}
-	return "", nil
+	return createdNamedID(before, items, name, nil)
 }
 func (c *Client) DeleteBaseline(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/baseline/delete", Values("baselineid", id), nil, nil)
@@ -170,6 +174,10 @@ func (c *Client) ListBlocklists(ctx context.Context) ([]Named, error) {
 	return sortNamed(items), nil
 }
 func (c *Client) CreateBlocklist(ctx context.Context, name string) (string, error) {
+	before, err := c.ListBlocklists(ctx)
+	if err != nil {
+		return "", err
+	}
 	var out struct {
 		BlocklistID string `json:"blocklistid"`
 	}
@@ -183,10 +191,7 @@ func (c *Client) CreateBlocklist(ctx context.Context, name string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if item, ok := FindByName(items, name); ok {
-		return item.ID, nil
-	}
-	return "", nil
+	return createdNamedID(before, items, name, nil)
 }
 func (c *Client) DeleteBlocklist(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/blocklist/delete", Values("blocklistid", id), nil, nil)
@@ -206,6 +211,10 @@ func (c *Client) ListGroups(ctx context.Context) ([]Named, error) {
 	return sortNamed(items), nil
 }
 func (c *Client) CreateGroup(ctx context.Context, name, parent string, hidden bool) (string, error) {
+	before, err := c.ListGroups(ctx)
+	if err != nil {
+		return "", err
+	}
 	if err := c.Post(ctx, "/v1/group/new", Values("name", name, "parent", parent, "hidden", BoolInt(hidden)), nil, nil); err != nil {
 		return "", err
 	}
@@ -213,10 +222,7 @@ func (c *Client) CreateGroup(ctx context.Context, name, parent string, hidden bo
 	if err != nil {
 		return "", err
 	}
-	if item, ok := FindByName(items, name); ok {
-		return item.ID, nil
-	}
-	return "", nil
+	return createdNamedID(before, items, name, map[string]string{"parent": parent, "hidden": BoolInt(hidden)})
 }
 func (c *Client) DeleteGroup(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/group/remove", Values("groupid", id), nil, nil)
@@ -234,4 +240,44 @@ func (c *Client) ListAgents(ctx context.Context) ([]Named, error) {
 		items = append(items, Named{ID: a.AgentID, Name: a.Hostname, Attrs: map[string]string{"username": a.Username}})
 	}
 	return sortNamed(items), nil
+}
+
+func createdNamedID(before, after []Named, name string, attrs map[string]string) (string, error) {
+	beforeIDs := make(map[string]struct{}, len(before))
+	for _, item := range before {
+		beforeIDs[item.ID] = struct{}{}
+	}
+	var matches []Named
+	for _, item := range after {
+		if _, existed := beforeIDs[item.ID]; existed {
+			continue
+		}
+		if item.Name != name {
+			continue
+		}
+		if !namedAttrsMatch(item, attrs) {
+			continue
+		}
+		matches = append(matches, item)
+	}
+	switch len(matches) {
+	case 0:
+		return "", nil
+	case 1:
+		return matches[0].ID, nil
+	default:
+		return "", fmt.Errorf("airlock: create returned ambiguous results for %q", name)
+	}
+}
+
+func namedAttrsMatch(item Named, attrs map[string]string) bool {
+	for key, want := range attrs {
+		if want == "" {
+			continue
+		}
+		if item.Attrs[key] != want {
+			return false
+		}
+	}
+	return true
 }

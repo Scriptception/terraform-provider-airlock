@@ -7,7 +7,7 @@
 
 Manage [Airlock Digital](https://www.airlockdigital.com/) application control configuration as code.
 
-- **15 resources** for allowlist applications, categories, baselines, blocklists, policy groups, group policy relationships, trusted path/process/publisher rules, and hash relationships.
+- **11 resources** for allowlist applications, categories, baselines, blocklists, policy groups, group policy relationships, and trusted path/process/publisher rules.
 - **6 data sources** for reading existing Airlock configuration and inventory.
 - Built on [terraform-plugin-framework](https://developer.hashicorp.com/terraform/plugin/framework) (protocol v6).
 - Targets the Airlock Digital REST API v6.1.2+.
@@ -28,7 +28,7 @@ terraform {
   required_providers {
     airlock = {
       source  = "Scriptception/airlock"
-      version = "~> 0.1"
+      version = "0.0.9"
     }
   }
 }
@@ -96,10 +96,6 @@ Full reference docs live under [`docs/`](./docs) and on the Terraform Registry o
 | `airlock_group_path` | Trusted path entries on a policy group. |
 | `airlock_group_process` | Parent or grandparent process rules on a policy group. |
 | `airlock_group_publisher` | Trusted publisher entries on a policy group. |
-| `airlock_hash` | SHA256 hash inventory registration. |
-| `airlock_application_hash` | Hash membership for an allowlist application package. |
-| `airlock_baseline_hash` | Hash membership for a baseline. |
-| `airlock_blocklist_hash` | Hash membership for the blocklist hash set. |
 
 Data sources:
 
@@ -126,20 +122,20 @@ The provider marks `api_key` as `Sensitive`, so Terraform does not print it in p
 make build      # compile
 make install    # go install to $GOBIN, useful with Terraform dev_overrides
 make test       # unit tests, no network
-make testacc    # read-only acceptance tests; requires AIRLOCK_URL / AIRLOCK_API_KEY / TF_ACC=1
+make testacc    # acceptance tests; mutation tests also require AIRLOCK_ACC_MUTATION=1
 make generate   # regenerate docs/ from schema + examples/
 make lint       # golangci-lint
 make vuln       # govulncheck
 make fmt        # gofmt
 ```
 
-Mutation acceptance tests should only be run against an isolated Airlock environment with disposable `tf-acc-*` objects. Never commit live Airlock URLs, API keys, hostnames, user details, group names, or response fixtures.
+Read-only acceptance tests require `AIRLOCK_URL`, `AIRLOCK_API_KEY`, and `TF_ACC=1`. Mutation acceptance tests additionally require `AIRLOCK_ACC_MUTATION=1` and should only be run against an isolated Airlock environment with disposable `tf-acc-*` objects. Never commit live Airlock URLs, API keys, hostnames, user details, group names, or response fixtures.
 
 See [CLAUDE.md](./CLAUDE.md) for architecture notes, API scope decisions, and conventions for adding new resources.
 
 ## Contributing
 
-Issues and PRs welcome. If you add a new resource, verify the live Airlock API behavior before coding. The public Postman documentation is the source of truth for endpoint discovery, but Terraform resources still need read/import/delete behavior that is safe and durable.
+Issues and PRs welcome. If you add a new resource, verify the live Airlock API behavior before coding. The public Postman documentation is the source of truth for endpoint discovery, but Terraform resources still need read/import/delete behavior that is safe and durable. Add/remove-only endpoints should remain client helpers or future work until Airlock exposes a reliable read path.
 
 Follow the existing conventions: typed client methods in `internal/client`, Framework resources and data sources in `internal/provider`, generated docs under `docs/`, and runnable examples under `examples/`.
 

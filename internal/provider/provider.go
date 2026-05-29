@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/Scriptception/terraform-provider-airlock/internal/client"
@@ -36,10 +37,10 @@ func (p *AirlockProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 }
 func (p *AirlockProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{Description: "Manage Airlock Digital application control configuration as code.", Attributes: map[string]schema.Attribute{
-		"url":             schema.StringAttribute{Description: "Base URL of the Airlock REST API, for example `https://airlock.example.com:3129`. May also be set via AIRLOCK_URL.", Optional: true},
+		"url":             schema.StringAttribute{Description: "Base URL of the Airlock REST API, for example `https://airlock.example.com:3129`. May also be set via AIRLOCK_URL.", Optional: true, Validators: []validator.String{urlValidator{}}},
 		"api_key":         schema.StringAttribute{Description: "Airlock API key. May also be set via AIRLOCK_API_KEY.", Optional: true, Sensitive: true},
 		"insecure":        schema.BoolAttribute{Description: "Skip TLS certificate verification. May also be set via AIRLOCK_INSECURE. Disabled by default.", Optional: true},
-		"timeout_seconds": schema.Int64Attribute{Description: "HTTP request timeout in seconds. May also be set via AIRLOCK_TIMEOUT_SECONDS. Defaults to 30.", Optional: true},
+		"timeout_seconds": schema.Int64Attribute{Description: "HTTP request timeout in seconds. May also be set via AIRLOCK_TIMEOUT_SECONDS. Defaults to 30.", Optional: true, Validators: []validator.Int64{positiveInt64Validator{}}},
 	}}
 }
 func (p *AirlockProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
@@ -83,7 +84,6 @@ func (p *AirlockProvider) Resources(context.Context) []func() resource.Resource 
 	return []func() resource.Resource{
 		NewApplicationResource, NewApplicationCategoryResource, NewBaselineResource, NewBlocklistResource, NewGroupResource,
 		NewGroupApplicationPolicyResource, NewGroupBaselinePolicyResource, NewGroupBlocklistPolicyResource, NewGroupPathResource, NewGroupProcessResource, NewGroupPublisherResource,
-		NewHashResource, NewApplicationHashResource, NewBaselineHashResource, NewBlocklistHashResource,
 	}
 }
 func (p *AirlockProvider) DataSources(context.Context) []func() datasource.DataSource {

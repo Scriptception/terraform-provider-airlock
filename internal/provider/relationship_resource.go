@@ -7,6 +7,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/Scriptception/terraform-provider-airlock/internal/client"
@@ -20,9 +24,6 @@ type relModel struct {
 	Type     types.String `tfsdk:"type"`
 	Comment  types.String `tfsdk:"comment"`
 	Audit    types.Bool   `tfsdk:"audit"`
-	Hashes   types.List   `tfsdk:"hashes"`
-	Path     types.String `tfsdk:"path"`
-	SHA256   types.String `tfsdk:"sha256"`
 }
 
 type relSpec struct {
@@ -31,6 +32,7 @@ type relSpec struct {
 	Attrs       map[string]schema.Attribute
 	Create      func(context.Context, *client.Client, relModel) error
 	Delete      func(context.Context, *client.Client, relModel) error
+	Read        func(context.Context, *client.Client, relModel) (relModel, bool, error)
 	ID          func(relModel) string
 	Import      func(context.Context, resource.ImportStateRequest, *resource.ImportStateResponse)
 }
@@ -48,21 +50,6 @@ func (r *relResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 	attrs := map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true, Description: "Stable Terraform import ID for this Airlock relationship."}}
 	for k, v := range r.spec.Attrs {
 		attrs[k] = v
-	}
-	for k, v := range map[string]schema.Attribute{
-		"group_id":  schema.StringAttribute{Computed: true, Description: "Airlock policy group ID."},
-		"target_id": schema.StringAttribute{Computed: true, Description: "Target Airlock object ID."},
-		"value":     schema.StringAttribute{Computed: true, Description: "Relationship value."},
-		"type":      schema.StringAttribute{Computed: true, Description: "Relationship type."},
-		"comment":   schema.StringAttribute{Computed: true, Description: "Comment."},
-		"audit":     schema.BoolAttribute{Computed: true, Description: "Audit mode."},
-		"hashes":    schema.ListAttribute{Computed: true, ElementType: types.StringType, Description: "SHA256 hashes."},
-		"path":      schema.StringAttribute{Computed: true, Description: "Associated path."},
-		"sha256":    schema.StringAttribute{Computed: true, Description: "SHA256 hash."},
-	} {
-		if _, ok := attrs[k]; !ok {
-			attrs[k] = v
-		}
 	}
 	resp.Schema = schema.Schema{Description: r.spec.Description, Attributes: attrs}
 }
@@ -94,6 +81,20 @@ func (r *relResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	var state relModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if r.spec.Read != nil {
+		next, ok, err := r.spec.Read(ctx, r.client, state)
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to read Airlock "+r.spec.TypeName, err.Error())
+			return
+		}
+		if !ok {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		next.ID = types.StringValue(r.spec.ID(next))
+		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -129,11 +130,6 @@ func (r *relResource) ImportState(ctx context.Context, req resource.ImportStateR
 	resource.ImportStatePassthroughID(ctx, pathRoot("id"), req, resp)
 }
 
-func stringsFromList(ctx context.Context, l types.List) []string {
-	var out []string
-	_ = l.ElementsAs(ctx, &out, false)
-	return out
-}
 func importTwoPart(firstAttr, secondAttr string) func(context.Context, resource.ImportStateRequest, *resource.ImportStateResponse) {
 	return func(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 		parts := strings.SplitN(req.ID, ":", 2)
@@ -159,87 +155,142 @@ func importThreePart(firstAttr, secondAttr, thirdAttr string) func(context.Conte
 		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot(thirdAttr), parts[2])...)
 	}
 }
-func importHash(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("id"), req.ID)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("sha256"), req.ID)...)
+func requiredRelString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Required: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}
 }
 
-var groupIDAttr = schema.StringAttribute{Required: true, Description: "Airlock policy group ID."}
-var hashesAttr = schema.ListAttribute{Required: true, ElementType: types.StringType, Description: "SHA256 hashes managed by this relationship."}
+func optionalRelString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Optional: true, Computed: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace(), stringplanmodifier.UseStateForUnknown()}}
+}
+
+func optionalRelBool(description string) schema.BoolAttribute {
+	return schema.BoolAttribute{Optional: true, Description: description, PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()}}
+}
+
+var groupIDAttr = requiredRelString("Airlock policy group ID.")
+
+func readGroupApplication(ctx context.Context, c *client.Client, m relModel) (relModel, bool, error) {
+	p, err := c.GetGroupPolicy(ctx, m.GroupID.ValueString())
+	if err != nil {
+		return m, false, err
+	}
+	for _, item := range p.Applications {
+		if item.ID == m.TargetID.ValueString() {
+			return m, true, nil
+		}
+	}
+	return m, false, nil
+}
+
+func readGroupBaseline(ctx context.Context, c *client.Client, m relModel) (relModel, bool, error) {
+	p, err := c.GetGroupPolicy(ctx, m.GroupID.ValueString())
+	if err != nil {
+		return m, false, err
+	}
+	for _, item := range p.Baselines {
+		if item.ID == m.TargetID.ValueString() {
+			return m, true, nil
+		}
+	}
+	return m, false, nil
+}
+
+func readGroupBlocklist(ctx context.Context, c *client.Client, m relModel) (relModel, bool, error) {
+	p, err := c.GetGroupPolicy(ctx, m.GroupID.ValueString())
+	if err != nil {
+		return m, false, err
+	}
+	for _, item := range p.Blocklists {
+		if item.ID == m.TargetID.ValueString() {
+			return m, true, nil
+		}
+	}
+	return m, false, nil
+}
+
+func readGroupPath(ctx context.Context, c *client.Client, m relModel) (relModel, bool, error) {
+	p, err := c.GetGroupPolicy(ctx, m.GroupID.ValueString())
+	if err != nil {
+		return m, false, err
+	}
+	for _, item := range p.Paths {
+		if item.Name == m.Value.ValueString() {
+			m.Comment = types.StringValue(item.Attrs["comment"])
+			return m, true, nil
+		}
+	}
+	return m, false, nil
+}
+
+func readGroupProcess(ctx context.Context, c *client.Client, m relModel) (relModel, bool, error) {
+	p, err := c.GetGroupPolicy(ctx, m.GroupID.ValueString())
+	if err != nil {
+		return m, false, err
+	}
+	for _, item := range p.Processes {
+		if item.Name == m.Value.ValueString() && item.Attrs["type"] == m.Type.ValueString() {
+			m.Comment = types.StringValue(item.Attrs["comment"])
+			return m, true, nil
+		}
+	}
+	return m, false, nil
+}
+
+func readGroupPublisher(ctx context.Context, c *client.Client, m relModel) (relModel, bool, error) {
+	p, err := c.GetGroupPolicy(ctx, m.GroupID.ValueString())
+	if err != nil {
+		return m, false, err
+	}
+	for _, item := range p.Publishers {
+		if item.Name == m.Value.ValueString() {
+			m.Comment = types.StringValue(item.Attrs["comment"])
+			return m, true, nil
+		}
+	}
+	return m, false, nil
+}
 
 func NewGroupApplicationPolicyResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "group_application_policy", Description: "Approve an Airlock allowlist application package for a policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "target_id": schema.StringAttribute{Required: true, Description: "Application ID."}}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.TargetID.ValueString() }, Import: importTwoPart("group_id", "target_id"), Create: func(ctx context.Context, c *client.Client, m relModel) error {
+	return newRelResource(relSpec{TypeName: "group_application_policy", Description: "Approve an Airlock allowlist application package for a policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "target_id": requiredRelString("Application ID.")}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.TargetID.ValueString() }, Import: importTwoPart("group_id", "target_id"), Read: readGroupApplication, Create: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.SetGroupApplication(ctx, m.GroupID.ValueString(), m.TargetID.ValueString(), true)
 	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.SetGroupApplication(ctx, m.GroupID.ValueString(), m.TargetID.ValueString(), false)
 	}})
 }
 func NewGroupBaselinePolicyResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "group_baseline_policy", Description: "Approve an Airlock baseline for a policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "target_id": schema.StringAttribute{Required: true, Description: "Baseline ID."}}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.TargetID.ValueString() }, Import: importTwoPart("group_id", "target_id"), Create: func(ctx context.Context, c *client.Client, m relModel) error {
+	return newRelResource(relSpec{TypeName: "group_baseline_policy", Description: "Approve an Airlock baseline for a policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "target_id": requiredRelString("Baseline ID.")}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.TargetID.ValueString() }, Import: importTwoPart("group_id", "target_id"), Read: readGroupBaseline, Create: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.SetGroupBaseline(ctx, m.GroupID.ValueString(), m.TargetID.ValueString(), true)
 	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.SetGroupBaseline(ctx, m.GroupID.ValueString(), m.TargetID.ValueString(), false)
 	}})
 }
 func NewGroupBlocklistPolicyResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "group_blocklist_policy", Description: "Approve an Airlock blocklist for a policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "target_id": schema.StringAttribute{Required: true, Description: "Blocklist ID."}, "audit": schema.BoolAttribute{Optional: true, Description: "Enable audit mode for the blocklist approval."}}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.TargetID.ValueString() }, Import: importTwoPart("group_id", "target_id"), Create: func(ctx context.Context, c *client.Client, m relModel) error {
+	return newRelResource(relSpec{TypeName: "group_blocklist_policy", Description: "Approve an Airlock blocklist for a policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "target_id": requiredRelString("Blocklist ID."), "audit": optionalRelBool("Enable audit mode for the blocklist approval.")}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.TargetID.ValueString() }, Import: importTwoPart("group_id", "target_id"), Read: readGroupBlocklist, Create: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.SetGroupBlocklist(ctx, m.GroupID.ValueString(), m.TargetID.ValueString(), true, m.Audit.ValueBool())
 	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.SetGroupBlocklist(ctx, m.GroupID.ValueString(), m.TargetID.ValueString(), false, false)
 	}})
 }
 func NewGroupPathResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "group_path", Description: "Manage a trusted path entry on an Airlock policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "value": schema.StringAttribute{Required: true, Description: "Path pattern."}, "comment": schema.StringAttribute{Optional: true, Description: "Comment."}}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.Value.ValueString() }, Import: importTwoPart("group_id", "value"), Create: func(ctx context.Context, c *client.Client, m relModel) error {
+	return newRelResource(relSpec{TypeName: "group_path", Description: "Manage a trusted path entry on an Airlock policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "value": requiredRelString("Path pattern."), "comment": optionalRelString("Comment.")}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.Value.ValueString() }, Import: importTwoPart("group_id", "value"), Read: readGroupPath, Create: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.AddGroupPath(ctx, m.GroupID.ValueString(), m.Value.ValueString(), m.Comment.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.RemoveGroupPath(ctx, m.GroupID.ValueString(), m.Value.ValueString())
 	}})
 }
 func NewGroupProcessResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "group_process", Description: "Manage a parent or grandparent process rule on an Airlock policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "value": schema.StringAttribute{Required: true, Description: "Process name."}, "type": schema.StringAttribute{Required: true, Description: "Process type: pprocess or gprocess."}, "comment": schema.StringAttribute{Optional: true, Description: "Comment."}}, ID: func(m relModel) string {
+	return newRelResource(relSpec{TypeName: "group_process", Description: "Manage a parent or grandparent process rule on an Airlock policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "value": requiredRelString("Process name."), "type": schema.StringAttribute{Required: true, Description: "Process type: pprocess or gprocess.", Validators: []validator.String{stringOneOfValidator{allowed: []string{"pprocess", "gprocess"}}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "comment": optionalRelString("Comment.")}, ID: func(m relModel) string {
 		return m.GroupID.ValueString() + ":" + m.Type.ValueString() + ":" + m.Value.ValueString()
-	}, Import: importThreePart("group_id", "type", "value"), Create: func(ctx context.Context, c *client.Client, m relModel) error {
+	}, Import: importThreePart("group_id", "type", "value"), Read: readGroupProcess, Create: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.AddGroupProcess(ctx, m.GroupID.ValueString(), m.Value.ValueString(), m.Type.ValueString(), m.Comment.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.RemoveGroupProcess(ctx, m.GroupID.ValueString(), m.Value.ValueString(), m.Type.ValueString())
 	}})
 }
 func NewGroupPublisherResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "group_publisher", Description: "Manage a trusted publisher entry on an Airlock policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "value": schema.StringAttribute{Required: true, Description: "Publisher name."}, "comment": schema.StringAttribute{Optional: true, Description: "Comment."}}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.Value.ValueString() }, Import: importTwoPart("group_id", "value"), Create: func(ctx context.Context, c *client.Client, m relModel) error {
+	return newRelResource(relSpec{TypeName: "group_publisher", Description: "Manage a trusted publisher entry on an Airlock policy group.", Attrs: map[string]schema.Attribute{"group_id": groupIDAttr, "value": requiredRelString("Publisher name."), "comment": optionalRelString("Comment.")}, ID: func(m relModel) string { return m.GroupID.ValueString() + ":" + m.Value.ValueString() }, Import: importTwoPart("group_id", "value"), Read: readGroupPublisher, Create: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.AddGroupPublisher(ctx, m.GroupID.ValueString(), m.Value.ValueString(), m.Comment.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
 		return c.RemoveGroupPublisher(ctx, m.GroupID.ValueString(), m.Value.ValueString())
-	}})
-}
-func NewHashResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "hash", Description: "Register a SHA256 hash in Airlock's hash inventory.", Attrs: map[string]schema.Attribute{"sha256": schema.StringAttribute{Required: true, Description: "SHA256 hash."}, "path": schema.StringAttribute{Optional: true, Description: "Associated path."}}, ID: func(m relModel) string { return m.SHA256.ValueString() }, Import: importHash, Create: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.AddHash(ctx, m.SHA256.ValueString(), m.Path.ValueString())
-	}, Delete: func(context.Context, *client.Client, relModel) error { return nil }})
-}
-func NewApplicationHashResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "application_hash", Description: "Attach hashes to an Airlock allowlist application package.", Attrs: map[string]schema.Attribute{"target_id": schema.StringAttribute{Required: true, Description: "Application ID."}, "hashes": hashesAttr}, ID: func(m relModel) string {
-		return "application:" + m.TargetID.ValueString() + ":" + strings.Join(stringsFromList(context.Background(), m.Hashes), ",")
-	}, Create: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.AddApplicationHash(ctx, m.TargetID.ValueString(), stringsFromList(ctx, m.Hashes))
-	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.RemoveApplicationHash(ctx, m.TargetID.ValueString(), stringsFromList(ctx, m.Hashes))
-	}})
-}
-func NewBaselineHashResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "baseline_hash", Description: "Attach hashes to an Airlock baseline.", Attrs: map[string]schema.Attribute{"target_id": schema.StringAttribute{Required: true, Description: "Baseline ID."}, "hashes": hashesAttr}, ID: func(m relModel) string {
-		return "baseline:" + m.TargetID.ValueString() + ":" + strings.Join(stringsFromList(context.Background(), m.Hashes), ",")
-	}, Create: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.AddBaselineHash(ctx, m.TargetID.ValueString(), stringsFromList(ctx, m.Hashes))
-	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.RemoveBaselineHash(ctx, m.TargetID.ValueString(), stringsFromList(ctx, m.Hashes))
-	}})
-}
-func NewBlocklistHashResource() resource.Resource {
-	return newRelResource(relSpec{TypeName: "blocklist_hash", Description: "Attach hashes to the Airlock blocklist hash set.", Attrs: map[string]schema.Attribute{"hashes": hashesAttr}, ID: func(m relModel) string {
-		return "blocklist:" + strings.Join(stringsFromList(context.Background(), m.Hashes), ",")
-	}, Create: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.AddBlocklistHash(ctx, stringsFromList(ctx, m.Hashes))
-	}, Delete: func(ctx context.Context, c *client.Client, m relModel) error {
-		return c.RemoveBlocklistHash(ctx, stringsFromList(ctx, m.Hashes))
 	}})
 }

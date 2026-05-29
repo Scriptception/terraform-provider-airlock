@@ -9,6 +9,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/Scriptception/terraform-provider-airlock/internal/client"
@@ -100,6 +103,8 @@ func (r *simpleResource) Read(ctx context.Context, req resource.ReadRequest, res
 		switch key {
 		case "version", "parent_category_id", "parent":
 			resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot(key), val)...)
+		case "hidden":
+			resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot(key), val == "1")...)
 		}
 	}
 }
@@ -120,6 +125,22 @@ func (r *simpleResource) ImportState(ctx context.Context, req resource.ImportSta
 	resource.ImportStatePassthroughID(ctx, pathRoot("id"), req, resp)
 }
 
+func requiredReplaceString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Required: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}
+}
+
+func optionalReplaceString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Optional: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}
+}
+
+func optionalComputedReplaceString(description string) schema.StringAttribute {
+	return schema.StringAttribute{Optional: true, Computed: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace(), stringplanmodifier.UseStateForUnknown()}}
+}
+
+func optionalComputedReplaceBool(description string) schema.BoolAttribute {
+	return schema.BoolAttribute{Optional: true, Computed: true, Description: description, PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace(), boolplanmodifier.UseStateForUnknown()}}
+}
+
 type simplePlanGetter interface {
 	GetAttribute(context.Context, path.Path, interface{}) diag.Diagnostics
 }
@@ -138,17 +159,17 @@ func (r *simpleResource) readSimplePlan(ctx context.Context, plan simplePlanGett
 
 func NewApplicationResource() resource.Resource {
 	return newSimpleResource(simpleSpec{TypeName: "application", Description: "Manage an Airlock allowlist application package.", Attrs: map[string]schema.Attribute{
-		"name":        schema.StringAttribute{Required: true, Description: "Application package name."},
-		"version":     schema.StringAttribute{Optional: true, Description: "Application package version."},
-		"category_id": schema.StringAttribute{Optional: true, Description: "Application category ID."},
+		"name":        requiredReplaceString("Application package name."),
+		"version":     optionalComputedReplaceString("Application package version."),
+		"category_id": optionalReplaceString("Application category ID."),
 	}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
 		return c.CreateApplication(ctx, m.Name.ValueString(), m.Version.ValueString(), m.CategoryID.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, id string) error { return c.DeleteApplication(ctx, id) }, List: (*client.Client).ListApplications})
 }
 func NewApplicationCategoryResource() resource.Resource {
 	return newSimpleResource(simpleSpec{TypeName: "application_category", Description: "Manage an Airlock application category or subcategory.", Attrs: map[string]schema.Attribute{
-		"name":               schema.StringAttribute{Required: true, Description: "Category name."},
-		"parent_category_id": schema.StringAttribute{Required: true, Description: "Parent category ID. Airlock creates categories beneath an existing parent category."},
+		"name":               requiredReplaceString("Category name."),
+		"parent_category_id": requiredReplaceString("Parent category ID. Airlock creates categories beneath an existing parent category."),
 	}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
 		return c.CreateApplicationCategory(ctx, m.Name.ValueString(), m.ParentCategoryID.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, id string) error {
@@ -156,20 +177,20 @@ func NewApplicationCategoryResource() resource.Resource {
 	}, List: (*client.Client).ListApplicationCategories})
 }
 func NewBaselineResource() resource.Resource {
-	return newSimpleResource(simpleSpec{TypeName: "baseline", Description: "Manage an Airlock baseline package.", Attrs: map[string]schema.Attribute{"name": schema.StringAttribute{Required: true, Description: "Baseline name."}}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
+	return newSimpleResource(simpleSpec{TypeName: "baseline", Description: "Manage an Airlock baseline package.", Attrs: map[string]schema.Attribute{"name": requiredReplaceString("Baseline name.")}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
 		return c.CreateBaseline(ctx, m.Name.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, id string) error { return c.DeleteBaseline(ctx, id) }, List: (*client.Client).ListBaselines})
 }
 func NewBlocklistResource() resource.Resource {
-	return newSimpleResource(simpleSpec{TypeName: "blocklist", Description: "Manage an Airlock blocklist package.", Attrs: map[string]schema.Attribute{"name": schema.StringAttribute{Required: true, Description: "Blocklist name."}}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
+	return newSimpleResource(simpleSpec{TypeName: "blocklist", Description: "Manage an Airlock blocklist package.", Attrs: map[string]schema.Attribute{"name": requiredReplaceString("Blocklist name.")}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
 		return c.CreateBlocklist(ctx, m.Name.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, id string) error { return c.DeleteBlocklist(ctx, id) }, List: (*client.Client).ListBlocklists})
 }
 func NewGroupResource() resource.Resource {
 	return newSimpleResource(simpleSpec{TypeName: "group", Description: "Manage an Airlock policy group.", Attrs: map[string]schema.Attribute{
-		"name":   schema.StringAttribute{Required: true, Description: "Group name."},
-		"parent": schema.StringAttribute{Optional: true, Description: "Parent group name or ID, if Airlock requires one."},
-		"hidden": schema.BoolAttribute{Optional: true, Description: "Whether the group is hidden."},
+		"name":   requiredReplaceString("Group name."),
+		"parent": optionalComputedReplaceString("Parent group name or ID, if Airlock requires one."),
+		"hidden": optionalComputedReplaceBool("Whether the group is hidden."),
 	}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
 		return c.CreateGroup(ctx, m.Name.ValueString(), m.Parent.ValueString(), m.Hidden.ValueBool())
 	}, Delete: func(ctx context.Context, c *client.Client, id string) error { return c.DeleteGroup(ctx, id) }, List: (*client.Client).ListGroups})

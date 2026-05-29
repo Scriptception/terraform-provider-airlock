@@ -11,7 +11,6 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - Policy groups: `airlock_group`
 - Group allowlist/baseline/blocklist approvals: `airlock_group_application_policy`, `airlock_group_baseline_policy`, `airlock_group_blocklist_policy`
 - Group path/process/publisher rules: `airlock_group_path`, `airlock_group_process`, `airlock_group_publisher`
-- Hash inventory and package relationships: `airlock_hash`, `airlock_application_hash`, `airlock_baseline_hash`, `airlock_blocklist_hash`
 
 ## Terraform data sources
 
@@ -30,5 +29,6 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - License set/get: sensitive licensing workflow.
 - Logging and execution history: reporting/audit data.
 - Export endpoints: file/export actions.
+- Hash inventory and hash package membership: add/remove endpoints need a reliable read/import path before they are safe Terraform resources.
 
 Metarule endpoints are documented for future expansion; they require additional live validation of update/delete/read semantics before being exposed as stateful resources.

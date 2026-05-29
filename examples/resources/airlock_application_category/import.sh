@@ -1,0 +1,1 @@
+terraform import airlock_application_category.example 1700000001
