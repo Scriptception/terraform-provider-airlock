@@ -23,6 +23,7 @@ type simpleModel struct {
 	Version          types.String `tfsdk:"version"`
 	CategoryID       types.String `tfsdk:"category_id"`
 	ParentCategoryID types.String `tfsdk:"parent_category_id"`
+	ReferenceName    types.String `tfsdk:"reference_name"`
 	Parent           types.String `tfsdk:"parent"`
 	Hidden           types.Bool   `tfsdk:"hidden"`
 }
@@ -152,6 +153,7 @@ func (r *simpleResource) readSimplePlan(ctx context.Context, plan simplePlanGett
 	_ = plan.GetAttribute(ctx, pathRoot("version"), &model.Version)
 	_ = plan.GetAttribute(ctx, pathRoot("category_id"), &model.CategoryID)
 	_ = plan.GetAttribute(ctx, pathRoot("parent_category_id"), &model.ParentCategoryID)
+	_ = plan.GetAttribute(ctx, pathRoot("reference_name"), &model.ReferenceName)
 	_ = plan.GetAttribute(ctx, pathRoot("parent"), &model.Parent)
 	_ = plan.GetAttribute(ctx, pathRoot("hidden"), &model.Hidden)
 	return model
@@ -177,7 +179,26 @@ func NewApplicationCategoryResource() resource.Resource {
 	}, List: (*client.Client).ListApplicationCategories})
 }
 func NewBaselineResource() resource.Resource {
-	return newSimpleResource(simpleSpec{TypeName: "baseline", Description: "Manage an Airlock baseline package.", Attrs: map[string]schema.Attribute{"name": requiredReplaceString("Baseline name.")}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
+	return newSimpleResource(simpleSpec{TypeName: "baseline", Description: "Manage an Airlock baseline package or import an Airlock reference baseline.", Attrs: map[string]schema.Attribute{
+		"name":           requiredReplaceString("Baseline name."),
+		"reference_name": optionalReplaceString("Reference baseline name to import instead of creating an empty baseline."),
+	}, Create: func(ctx context.Context, c *client.Client, m simpleModel) (string, error) {
+		if !m.ReferenceName.IsNull() && !m.ReferenceName.IsUnknown() && m.ReferenceName.ValueString() != "" {
+			if err := c.ImportReferenceBaseline(ctx, m.ReferenceName.ValueString()); err != nil {
+				return "", err
+			}
+			items, err := c.ListBaselines(ctx)
+			if err != nil {
+				return "", err
+			}
+			if item, ok := client.FindByName(items, m.ReferenceName.ValueString()); ok {
+				return item.ID, nil
+			}
+			if item, ok := client.FindByName(items, m.Name.ValueString()); ok {
+				return item.ID, nil
+			}
+			return "", nil
+		}
 		return c.CreateBaseline(ctx, m.Name.ValueString())
 	}, Delete: func(ctx context.Context, c *client.Client, id string) error { return c.DeleteBaseline(ctx, id) }, List: (*client.Client).ListBaselines})
 }

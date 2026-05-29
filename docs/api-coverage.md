@@ -6,11 +6,15 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 
 - Allowlist application packages: `airlock_application`
 - Application categories: `airlock_application_category`
+- Allowlist metarules: `airlock_application_metarule`
 - Baselines: `airlock_baseline`
 - Blocklists: `airlock_blocklist`
+- Blocklist metarules: `airlock_blocklist_metarule`
 - Policy groups: `airlock_group`
+- Policy group settings: `airlock_group_settings`
 - Group allowlist/baseline/blocklist approvals: `airlock_group_application_policy`, `airlock_group_baseline_policy`, `airlock_group_blocklist_policy`
 - Group path/process/publisher rules: `airlock_group_path`, `airlock_group_process`, `airlock_group_publisher`
+- Hash repository and package membership: `airlock_hash`, `airlock_application_hashes`, `airlock_baseline_hashes`, `airlock_blocklist_hashes`
 
 ## Terraform data sources
 
@@ -20,6 +24,12 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - `airlock_blocklists`
 - `airlock_groups`
 - `airlock_agents`
+- `airlock_group_policy`
+- `airlock_group_agents`
+- `airlock_communication_lists`
+- `airlock_domain_groups`
+- `airlock_reference_baselines`
+- `airlock_hash_query`
 
 ## Intentionally not modeled as resources
 
@@ -29,6 +39,4 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - License set/get: sensitive licensing workflow.
 - Logging and execution history: reporting/audit data.
 - Export endpoints: file/export actions.
-- Hash inventory and hash package membership: add/remove endpoints need a reliable read/import path before they are safe Terraform resources.
-
-Metarule endpoints are documented for future expansion; they require additional live validation of update/delete/read semantics before being exposed as stateful resources.
+- Agent move/remove/download, OTP, exceptions, logging, license mutation, and file exports are operational workflows rather than durable Terraform state.

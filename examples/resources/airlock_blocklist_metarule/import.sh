@@ -1,0 +1,1 @@
+terraform import airlock_blocklist_metarule.example 1700000001:00000000-0000-0000-0000-000000000000

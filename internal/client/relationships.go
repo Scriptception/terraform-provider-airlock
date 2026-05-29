@@ -1,6 +1,9 @@
 package client
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 type Policy struct {
 	GroupID      string
@@ -97,35 +100,15 @@ func (c *Client) AddGroupPublisher(ctx context.Context, groupID, publisher, comm
 func (c *Client) RemoveGroupPublisher(ctx context.Context, groupID, publisher string) error {
 	return c.Post(ctx, "/v1/group/publisher/remove", Values("groupid", groupID, "publisher", publisher), nil, nil)
 }
-func (c *Client) AddHash(ctx context.Context, sha256, path string) error {
-	return c.Post(ctx, "/v1/hash/add", Values("sha256", sha256, "path", path), nil, nil)
-}
 func (c *Client) AddApplicationHash(ctx context.Context, applicationID string, hashes []string) error {
 	return c.Post(ctx, "/v1/hash/application/add", nil, map[string]any{"applicationid": applicationID, "hashes": hashes}, nil)
 }
 func (c *Client) RemoveApplicationHash(ctx context.Context, applicationID string, hashes []string) error {
-	return c.Post(ctx, "/v1/hash/application/remove", Values("applicationid", applicationID, "hashes", stringsJoin(hashes)), nil, nil)
+	return c.Post(ctx, "/v1/hash/application/remove", Values("applicationid", applicationID, "hashes", strings.Join(hashes, ",")), nil, nil)
 }
 func (c *Client) AddBaselineHash(ctx context.Context, baselineID string, hashes []string) error {
 	return c.Post(ctx, "/v1/hash/baseline/add", nil, map[string]any{"baselineid": baselineID, "hashes": hashes}, nil)
 }
 func (c *Client) RemoveBaselineHash(ctx context.Context, baselineID string, hashes []string) error {
 	return c.Post(ctx, "/v1/hash/baseline/remove", nil, map[string]any{"baselineid": baselineID, "hashes": hashes}, nil)
-}
-func (c *Client) AddBlocklistHash(ctx context.Context, hashes []string) error {
-	return c.Post(ctx, "/v1/hash/blocklist/add", nil, map[string]any{"hashes": hashes}, nil)
-}
-func (c *Client) RemoveBlocklistHash(ctx context.Context, hashes []string) error {
-	return c.Post(ctx, "/v1/hash/blocklist/remove", nil, map[string]any{"hashes": hashes}, nil)
-}
-
-func stringsJoin(v []string) string {
-	out := ""
-	for i, s := range v {
-		if i > 0 {
-			out += ","
-		}
-		out += s
-	}
-	return out
 }

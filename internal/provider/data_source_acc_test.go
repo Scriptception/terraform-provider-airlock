@@ -19,12 +19,20 @@ data "airlock_groups" "all" {}
 data "airlock_applications" "all" {}
 data "airlock_baselines" "all" {}
 data "airlock_blocklists" "all" {}
+data "airlock_reference_baselines" "all" {}
+
+data "airlock_group_policy" "first" {
+  group_id = data.airlock_groups.all.first_id
+}
+
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.airlock_groups.all", "items_json"),
 					resource.TestCheckResourceAttrSet("data.airlock_applications.all", "items_json"),
 					resource.TestCheckResourceAttrSet("data.airlock_baselines.all", "items_json"),
 					resource.TestCheckResourceAttrSet("data.airlock_blocklists.all", "items_json"),
+					resource.TestCheckResourceAttrSet("data.airlock_reference_baselines.all", "items_json"),
+					resource.TestCheckResourceAttrSet("data.airlock_group_policy.first", "items_json"),
 				),
 			},
 		},

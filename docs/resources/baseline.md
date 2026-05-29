@@ -3,12 +3,12 @@
 page_title: "airlock_baseline Resource - airlock"
 subcategory: ""
 description: |-
-  Manage an Airlock baseline package.
+  Manage an Airlock baseline package or import an Airlock reference baseline.
 ---
 
 # airlock_baseline (Resource)
 
-Manage an Airlock baseline package.
+Manage an Airlock baseline package or import an Airlock reference baseline.
 
 ## Example Usage
 
@@ -24,6 +24,10 @@ resource "airlock_baseline" "example" {
 ### Required
 
 - `name` (String) Baseline name.
+
+### Optional
+
+- `reference_name` (String) Reference baseline name to import instead of creating an empty baseline.
 
 ### Read-Only
 

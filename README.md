@@ -7,8 +7,8 @@
 
 Manage [Airlock Digital](https://www.airlockdigital.com/) application control configuration as code.
 
-- **11 resources** for allowlist applications, categories, baselines, blocklists, policy groups, group policy relationships, and trusted path/process/publisher rules.
-- **6 data sources** for reading existing Airlock configuration and inventory.
+- **18 resources** for allowlist applications, categories, metarules, baselines, blocklists, policy groups, group settings, group policy relationships, trusted path/process/publisher rules, and hash membership.
+- **12 data sources** for reading existing Airlock configuration, group policy, group agents, communication lists, domain groups, reference baselines, hash membership, and inventory.
 - Built on [terraform-plugin-framework](https://developer.hashicorp.com/terraform/plugin/framework) (protocol v6).
 - Targets the Airlock Digital REST API v6.1.2+.
 
@@ -16,7 +16,7 @@ Manage [Airlock Digital](https://www.airlockdigital.com/) application control co
 
 ## Requirements
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) 1.6+
+- [Terraform](https://developer.hashicorp.com/terraform/downloads) 1.11+
 - Airlock Digital REST API v6.1.2+
 - An Airlock API key with permissions for the resources you want to manage
 - [Go](https://go.dev/doc/install) 1.24+ only if building from source
@@ -28,7 +28,7 @@ terraform {
   required_providers {
     airlock = {
       source  = "Scriptception/airlock"
-      version = "0.0.9"
+      version = "~> 0.1"
     }
   }
 }
@@ -87,15 +87,22 @@ Full reference docs live under [`docs/`](./docs) and on the Terraform Registry o
 | --- | --- |
 | `airlock_application` | Allowlist application packages. |
 | `airlock_application_category` | Application categories and subcategories. |
+| `airlock_application_metarule` | Allowlist metarules with ordered criteria. |
+| `airlock_application_hashes` | Hash membership for an allowlist package. |
 | `airlock_baseline` | Baseline packages. |
+| `airlock_baseline_hashes` | Hash membership for a baseline package. |
 | `airlock_blocklist` | Blocklist packages. |
+| `airlock_blocklist_metarule` | Blocklist metarules with ordered criteria. |
+| `airlock_blocklist_hashes` | Hash membership for a blocklist package. |
 | `airlock_group` | Airlock policy groups. |
+| `airlock_group_settings` | Durable settings for an Airlock policy group. |
 | `airlock_group_application_policy` | Application approval for a policy group. |
 | `airlock_group_baseline_policy` | Baseline approval for a policy group. |
 | `airlock_group_blocklist_policy` | Blocklist approval for a policy group. |
 | `airlock_group_path` | Trusted path entries on a policy group. |
 | `airlock_group_process` | Parent or grandparent process rules on a policy group. |
 | `airlock_group_publisher` | Trusted publisher entries on a policy group. |
+| `airlock_hash` | SHA256 hash registration in the Airlock repository. |
 
 Data sources:
 
@@ -104,7 +111,13 @@ Data sources:
 - `airlock_applications`
 - `airlock_baselines`
 - `airlock_blocklists`
+- `airlock_communication_lists`
+- `airlock_domain_groups`
+- `airlock_group_agents`
+- `airlock_group_policy`
 - `airlock_groups`
+- `airlock_hash_query`
+- `airlock_reference_baselines`
 
 ## Authentication and secret handling
 
@@ -135,7 +148,7 @@ See [CLAUDE.md](./CLAUDE.md) for architecture notes, API scope decisions, and co
 
 ## Contributing
 
-Issues and PRs welcome. If you add a new resource, verify the live Airlock API behavior before coding. The public Postman documentation is the source of truth for endpoint discovery, but Terraform resources still need read/import/delete behavior that is safe and durable. Add/remove-only endpoints should remain client helpers or future work until Airlock exposes a reliable read path.
+Issues and PRs welcome. If you add a new resource, verify the live Airlock API behavior before coding. The public Postman documentation is the source of truth for endpoint discovery, but Terraform resources still need read/import/delete behavior that is safe and durable.
 
 Follow the existing conventions: typed client methods in `internal/client`, Framework resources and data sources in `internal/provider`, generated docs under `docs/`, and runnable examples under `examples/`.
 

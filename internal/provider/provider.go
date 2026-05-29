@@ -84,11 +84,13 @@ func (p *AirlockProvider) Resources(context.Context) []func() resource.Resource 
 	return []func() resource.Resource{
 		NewApplicationResource, NewApplicationCategoryResource, NewBaselineResource, NewBlocklistResource, NewGroupResource,
 		NewGroupApplicationPolicyResource, NewGroupBaselinePolicyResource, NewGroupBlocklistPolicyResource, NewGroupPathResource, NewGroupProcessResource, NewGroupPublisherResource,
+		NewGroupSettingsResource, NewApplicationMetaruleResource, NewBlocklistMetaruleResource, NewRepositoryHashResource, NewApplicationHashResource, NewBaselineHashResource, NewBlocklistHashResource,
 	}
 }
 func (p *AirlockProvider) DataSources(context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewApplicationsDataSource, NewApplicationCategoriesDataSource, NewBaselinesDataSource, NewBlocklistsDataSource, NewGroupsDataSource, NewAgentsDataSource,
+		NewGroupPolicyDataSource, NewGroupAgentsDataSource, NewCommunicationListsDataSource, NewDomainGroupsDataSource, NewReferenceBaselinesDataSource, NewHashQueryDataSource,
 	}
 }
 func (p *AirlockProvider) Functions(context.Context) []func() function.Function { return nil }
