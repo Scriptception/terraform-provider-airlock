@@ -1,0 +1,39 @@
+name: Tests
+
+on:
+  pull_request:
+    paths-ignore: ['README.md', 'CHANGELOG.md']
+  push:
+    branches: [main]
+    paths-ignore: ['README.md', 'CHANGELOG.md']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+      - run: go build -v ./...
+      - run: go test -v -cover ./...
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: cd tools && go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name airlock --provider-dir ..
+      - run: git diff --compact-summary --exit-code
