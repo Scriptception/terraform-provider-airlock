@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +93,63 @@ func TestPostRawErrorRedactsBody(t *testing.T) {
 	}
 	if got := err.Error(); contains(got, "secret export body") {
 		t.Fatalf("error leaked body: %s", got)
+	}
+}
+
+func TestGetAgentIncludesGroupID(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/v1/agent/find" {
+			t.Fatalf("unexpected path: %s", got)
+		}
+		if got := r.URL.Query().Get("agentid"); got != "agent-1" {
+			t.Fatalf("unexpected agentid: %s", got)
+		}
+		_, _ = w.Write([]byte(`{"error":"Success","response":{"agents":[{"agentid":"agent-1","hostname":"host-1","groupid":"group-1","username":"user-1","status":1}]}}`))
+	}))
+	defer s.Close()
+	c, err := New(Config{URL: s.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, ok, err := c.GetAgent(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected agent to be found")
+	}
+	if agent.GroupID != "group-1" {
+		t.Fatalf("unexpected group ID: %s", agent.GroupID)
+	}
+	if got := agent.Named().Attrs["groupid"]; got != "group-1" {
+		t.Fatalf("expected groupid attr, got %q", got)
+	}
+}
+
+func TestMoveAgentUsesArrayBody(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/v1/agent/move" {
+			t.Fatalf("unexpected path: %s", got)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := string(body)
+		for _, want := range []string{`"groupid":"group-1"`, `"agentid":["agent-1"]`} {
+			if !strings.Contains(raw, want) {
+				t.Fatalf("request body %q missing %s", raw, want)
+			}
+		}
+		_, _ = w.Write([]byte(`{"error":"Success"}`))
+	}))
+	defer s.Close()
+	c, err := New(Config{URL: s.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MoveAgent(context.Background(), "agent-1", "group-1"); err != nil {
+		t.Fatal(err)
 	}
 }
 

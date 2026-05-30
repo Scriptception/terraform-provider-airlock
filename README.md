@@ -85,6 +85,7 @@ Full reference docs live under [`docs/`](./docs) and on the Terraform Registry o
 
 | Resource | What it manages |
 | --- | --- |
+| `airlock_agent_group_assignment` | Endpoint agent assignment to an Airlock policy group. |
 | `airlock_application` | Allowlist application packages. |
 | `airlock_application_category` | Application categories and subcategories. |
 | `airlock_application_metarule` | Allowlist metarules with ordered criteria. |

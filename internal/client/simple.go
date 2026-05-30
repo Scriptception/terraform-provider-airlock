@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"net/url"
 )
 
 type application struct {
@@ -34,11 +35,20 @@ type group struct {
 	Hidden  int    `json:"hidden"`
 }
 
-type agent struct {
-	AgentID  string `json:"agentid"`
-	Hostname string `json:"hostname"`
-	Username string `json:"username"`
-	Status   any    `json:"status"`
+type Agent struct {
+	AgentID       string `json:"agentid"`
+	ClientVersion string `json:"clientversion"`
+	Domain        string `json:"domain"`
+	FreeSpace     string `json:"freespace"`
+	GroupID       string `json:"groupid"`
+	Hostname      string `json:"hostname"`
+	IP            string `json:"ip"`
+	LocalIP       string `json:"localip"`
+	LastCheckin   string `json:"lastcheckin"`
+	OS            string `json:"os"`
+	PolicyVersion string `json:"policyversion"`
+	Status        any    `json:"status"`
+	Username      string `json:"username"`
 }
 
 func (c *Client) ListApplications(ctx context.Context) ([]Named, error) {
@@ -229,17 +239,53 @@ func (c *Client) DeleteGroup(ctx context.Context, id string) error {
 }
 
 func (c *Client) ListAgents(ctx context.Context) ([]Named, error) {
-	var out struct {
-		Agents []agent `json:"agents"`
-	}
-	if err := c.Post(ctx, "/v1/agent/find", nil, nil, &out); err != nil {
+	agents, err := c.FindAgents(ctx, nil)
+	if err != nil {
 		return nil, err
 	}
-	items := make([]Named, 0, len(out.Agents))
-	for _, a := range out.Agents {
-		items = append(items, Named{ID: a.AgentID, Name: a.Hostname, Attrs: map[string]string{"username": a.Username}})
+	items := make([]Named, 0, len(agents))
+	for _, a := range agents {
+		items = append(items, a.Named())
 	}
 	return sortNamed(items), nil
+}
+
+func (c *Client) FindAgents(ctx context.Context, params url.Values) ([]Agent, error) {
+	var out struct {
+		Agents []Agent `json:"agents"`
+	}
+	if err := c.Post(ctx, "/v1/agent/find", params, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Agents, nil
+}
+
+func (c *Client) GetAgent(ctx context.Context, agentID string) (Agent, bool, error) {
+	agents, err := c.FindAgents(ctx, Values("agentid", agentID))
+	if err != nil {
+		return Agent{}, false, err
+	}
+	for _, agent := range agents {
+		if agent.AgentID == agentID {
+			return agent, true, nil
+		}
+	}
+	return Agent{}, false, nil
+}
+
+func (a Agent) Named() Named {
+	return Named{ID: a.AgentID, Name: a.Hostname, Attrs: map[string]string{
+		"clientversion": a.ClientVersion,
+		"domain":        a.Domain,
+		"groupid":       a.GroupID,
+		"ip":            a.IP,
+		"localip":       a.LocalIP,
+		"lastcheckin":   a.LastCheckin,
+		"os":            a.OS,
+		"policyversion": a.PolicyVersion,
+		"status":        fmt.Sprint(a.Status),
+		"username":      a.Username,
+	}}
 }
 
 func createdNamedID(before, after []Named, name string, attrs map[string]string) (string, error) {

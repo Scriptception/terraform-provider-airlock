@@ -11,6 +11,7 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - Blocklists: `airlock_blocklist`
 - Blocklist metarules: `airlock_blocklist_metarule`
 - Policy groups: `airlock_group`
+- Endpoint agent policy group assignment: `airlock_agent_group_assignment`
 - Policy group settings: `airlock_group_settings`
 - Group allowlist/baseline/blocklist approvals: `airlock_group_application_policy`, `airlock_group_baseline_policy`, `airlock_group_blocklist_policy`
 - Group path/process/publisher rules: `airlock_group_path`, `airlock_group_process`, `airlock_group_publisher`
@@ -34,6 +35,7 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 ## Internal helper endpoints
 
 - Application, baseline, and blocklist export endpoints are used as readback helpers for hash membership drift detection. They are intentionally not exposed as standalone Terraform resources because they are file/export actions rather than durable desired state.
+- Agent move and find endpoints are used to manage and verify endpoint-to-policy-group assignment. Agent removal and download remain out of scope.
 
 ## Intentionally not modeled as resources
 

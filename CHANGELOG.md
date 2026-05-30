@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+Added endpoint agent policy group assignment management with `airlock_agent_group_assignment`, backed by Airlock agent move/find APIs.
+
 ## 0.1.1
 
 Fixed relationship resource import/read handling for schema-specific attributes, and changed hash membership drift detection to use package export readback instead of hash query membership inference.

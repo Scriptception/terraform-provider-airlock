@@ -100,6 +100,9 @@ func (c *Client) AddGroupPublisher(ctx context.Context, groupID, publisher, comm
 func (c *Client) RemoveGroupPublisher(ctx context.Context, groupID, publisher string) error {
 	return c.Post(ctx, "/v1/group/publisher/remove", Values("groupid", groupID, "publisher", publisher), nil, nil)
 }
+func (c *Client) MoveAgent(ctx context.Context, agentID, groupID string) error {
+	return c.Post(ctx, "/v1/agent/move", nil, map[string]any{"groupid": groupID, "agentid": []string{agentID}}, nil)
+}
 func (c *Client) AddApplicationHash(ctx context.Context, applicationID string, hashes []string) error {
 	return c.Post(ctx, "/v1/hash/application/add", nil, map[string]any{"applicationid": applicationID, "hashes": hashes}, nil)
 }

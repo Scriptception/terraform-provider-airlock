@@ -85,6 +85,7 @@ func (p *AirlockProvider) Resources(context.Context) []func() resource.Resource 
 		NewApplicationResource, NewApplicationCategoryResource, NewBaselineResource, NewBlocklistResource, NewGroupResource,
 		NewGroupApplicationPolicyResource, NewGroupBaselinePolicyResource, NewGroupBlocklistPolicyResource, NewGroupPathResource, NewGroupProcessResource, NewGroupPublisherResource,
 		NewGroupSettingsResource, NewApplicationMetaruleResource, NewBlocklistMetaruleResource, NewRepositoryHashResource, NewApplicationHashResource, NewBaselineHashResource, NewBlocklistHashResource,
+		NewAgentGroupAssignmentResource,
 	}
 }
 func (p *AirlockProvider) DataSources(context.Context) []func() datasource.DataSource {
