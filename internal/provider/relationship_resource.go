@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/Scriptception/terraform-provider-airlock/internal/client"
@@ -65,8 +68,8 @@ func (r *relResource) Configure(_ context.Context, req resource.ConfigureRequest
 	r.client = c
 }
 func (r *relResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan relModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	plan, diags := r.relFromAttributes(ctx, req.Plan.GetAttribute)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -75,11 +78,11 @@ func (r *relResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 	plan.ID = types.StringValue(r.spec.ID(plan))
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(r.setRelState(ctx, resp.State, plan)...)
 }
 func (r *relResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var state relModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	state, diags := r.relFromAttributes(ctx, req.State.GetAttribute)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -94,14 +97,14 @@ func (r *relResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 			return
 		}
 		next.ID = types.StringValue(r.spec.ID(next))
-		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
+		resp.Diagnostics.Append(r.setRelState(ctx, resp.State, next)...)
 		return
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(r.setRelState(ctx, resp.State, state)...)
 }
 func (r *relResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan relModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	plan, diags := r.relFromAttributes(ctx, req.Plan.GetAttribute)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -110,17 +113,78 @@ func (r *relResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 	plan.ID = types.StringValue(r.spec.ID(plan))
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(r.setRelState(ctx, resp.State, plan)...)
 }
 func (r *relResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state relModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	state, diags := r.relFromAttributes(ctx, req.State.GetAttribute)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	if err := r.spec.Delete(ctx, r.client, state); err != nil {
 		resp.Diagnostics.AddError("Unable to delete Airlock "+r.spec.TypeName, err.Error())
 	}
+}
+func (r *relResource) relFromAttributes(ctx context.Context, get attrGetter) (relModel, diag.Diagnostics) {
+	var out relModel
+	var diags diag.Diagnostics
+	diags.Append(readStringAttr(ctx, get, "id", &out.ID)...)
+	if r.hasAttr("group_id") {
+		diags.Append(readStringAttr(ctx, get, "group_id", &out.GroupID)...)
+	}
+	if r.hasAttr("target_id") {
+		diags.Append(readStringAttr(ctx, get, "target_id", &out.TargetID)...)
+	}
+	if r.hasAttr("value") {
+		diags.Append(readStringAttr(ctx, get, "value", &out.Value)...)
+	}
+	if r.hasAttr("type") {
+		diags.Append(readStringAttr(ctx, get, "type", &out.Type)...)
+	}
+	if r.hasAttr("comment") {
+		diags.Append(readStringAttr(ctx, get, "comment", &out.Comment)...)
+	}
+	if r.hasAttr("audit") {
+		diags.Append(readBoolAttr(ctx, get, "audit", &out.Audit)...)
+	}
+	return out, diags
+}
+func (r *relResource) setRelState(ctx context.Context, state tfsdk.State, m relModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	diags.Append(state.SetAttribute(ctx, pathRoot("id"), m.ID)...)
+	if r.hasAttr("group_id") {
+		diags.Append(state.SetAttribute(ctx, pathRoot("group_id"), m.GroupID)...)
+	}
+	if r.hasAttr("target_id") {
+		diags.Append(state.SetAttribute(ctx, pathRoot("target_id"), m.TargetID)...)
+	}
+	if r.hasAttr("value") {
+		diags.Append(state.SetAttribute(ctx, pathRoot("value"), m.Value)...)
+	}
+	if r.hasAttr("type") {
+		diags.Append(state.SetAttribute(ctx, pathRoot("type"), m.Type)...)
+	}
+	if r.hasAttr("comment") {
+		diags.Append(state.SetAttribute(ctx, pathRoot("comment"), m.Comment)...)
+	}
+	if r.hasAttr("audit") {
+		diags.Append(state.SetAttribute(ctx, pathRoot("audit"), m.Audit)...)
+	}
+	return diags
+}
+func (r *relResource) hasAttr(name string) bool {
+	_, ok := r.spec.Attrs[name]
+	return ok
+}
+
+type attrGetter func(context.Context, path.Path, interface{}) diag.Diagnostics
+
+func readStringAttr(ctx context.Context, get attrGetter, name string, target *types.String) diag.Diagnostics {
+	return get(ctx, pathRoot(name), target)
+}
+
+func readBoolAttr(ctx context.Context, get attrGetter, name string, target *types.Bool) diag.Diagnostics {
+	return get(ctx, pathRoot(name), target)
 }
 func (r *relResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	if r.spec.Import != nil {

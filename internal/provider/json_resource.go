@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -320,8 +322,11 @@ func (r *hashMembershipResource) Create(ctx context.Context, req resource.Create
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	hashes := stringsFromSet(ctx, plan.Hashes)
-	var err error
+	hashes, err := normalizeHashes(stringsFromSet(ctx, plan.Hashes))
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(pathRoot("hashes"), "Invalid SHA256 hash", err.Error())
+		return
+	}
 	switch r.kind {
 	case "application":
 		err = r.client.AddApplicationHash(ctx, plan.TargetID.ValueString(), hashes)
@@ -334,7 +339,7 @@ func (r *hashMembershipResource) Create(ctx context.Context, req resource.Create
 		resp.Diagnostics.AddError("Unable to add Airlock hashes", err.Error())
 		return
 	}
-	plan.ID = types.StringValue(r.kind + ":" + plan.TargetID.ValueString() + ":" + strings.Join(hashes, ","))
+	plan.ID = types.StringValue(hashMembershipID(r.kind, plan.TargetID.ValueString(), hashes))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 func (r *hashMembershipResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -343,13 +348,17 @@ func (r *hashMembershipResource) Read(ctx context.Context, req resource.ReadRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	hashes := stringsFromSet(ctx, state.Hashes)
-	results, err := r.client.QueryHashes(ctx, hashes)
+	hashes, err := normalizeHashes(stringsFromSet(ctx, state.Hashes))
 	if err != nil {
-		resp.Diagnostics.AddError("Unable to query Airlock hashes", err.Error())
+		resp.Diagnostics.AddAttributeError(pathRoot("hashes"), "Invalid SHA256 hash", err.Error())
 		return
 	}
-	if !hashesBelong(results, r.kind, state.TargetID.ValueString(), hashes) {
+	exported, err := r.exportedHashes(ctx, state.TargetID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to export Airlock "+r.kind+" hashes", err.Error())
+		return
+	}
+	if !hashesSubset(exported, hashes) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -364,8 +373,11 @@ func (r *hashMembershipResource) Delete(ctx context.Context, req resource.Delete
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	hashes := stringsFromSet(ctx, state.Hashes)
-	var err error
+	hashes, err := normalizeHashes(stringsFromSet(ctx, state.Hashes))
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(pathRoot("hashes"), "Invalid SHA256 hash", err.Error())
+		return
+	}
 	switch r.kind {
 	case "application":
 		err = r.client.RemoveApplicationHash(ctx, state.TargetID.ValueString(), hashes)
@@ -379,14 +391,38 @@ func (r *hashMembershipResource) Delete(ctx context.Context, req resource.Delete
 	}
 }
 func (r *hashMembershipResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	parts := strings.SplitN(req.ID, ":", 3)
-	if len(parts) != 3 {
-		resp.Diagnostics.AddError("Invalid import ID", "Expected kind:target_id:hash1,hash2.")
+	targetID, hashes, id, err := parseHashMembershipImportID(r.kind, req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid import ID", err.Error())
 		return
 	}
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("id"), req.ID)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("target_id"), parts[1])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("hashes"), strings.Split(parts[2], ","))...)
+	hashSet, diags := types.SetValueFrom(ctx, types.StringType, hashes)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("id"), id)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("target_id"), targetID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, pathRoot("hashes"), hashSet)...)
+}
+
+func (r *hashMembershipResource) exportedHashes(ctx context.Context, targetID string) ([]string, error) {
+	var raw []byte
+	var err error
+	switch r.kind {
+	case "application":
+		raw, err = r.client.ExportApplication(ctx, targetID)
+	case "baseline":
+		raw, err = r.client.ExportBaseline(ctx, targetID)
+	case "blocklist":
+		raw, err = r.client.ExportBlocklist(ctx, targetID)
+	default:
+		return nil, fmt.Errorf("unsupported hash membership kind %q", r.kind)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return extractSHA256s(raw), nil
 }
 
 type repositoryHashResource struct{ configuredResource }
@@ -470,6 +506,96 @@ func stringsFromSet(ctx context.Context, s types.Set) []string {
 	var out []string
 	_ = s.ElementsAs(ctx, &out, false)
 	return out
+}
+
+var sha256Pattern = regexp.MustCompile(`(?i)(^|[^0-9a-f])([0-9a-f]{64})([^0-9a-f]|$)`)
+
+func extractSHA256s(raw []byte) []string {
+	matches := sha256Pattern.FindAllSubmatch(raw, -1)
+	hashes := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) >= 3 {
+			hashes = append(hashes, string(match[2]))
+		}
+	}
+	normalized, _ := normalizeHashes(hashes)
+	return normalized
+}
+
+func normalizeHashes(hashes []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(hashes))
+	for _, hash := range hashes {
+		normalized := strings.ToLower(strings.TrimSpace(hash))
+		if normalized == "" {
+			continue
+		}
+		if !isSHA256(normalized) {
+			return nil, fmt.Errorf("%q is not a 64-character hex SHA256", hash)
+		}
+		seen[normalized] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for hash := range seen {
+		out = append(out, hash)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func isSHA256(hash string) bool {
+	if len(hash) != 64 {
+		return false
+	}
+	for _, r := range hash {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func hashMembershipID(kind, targetID string, hashes []string) string {
+	normalized, _ := normalizeHashes(hashes)
+	return kind + ":" + targetID + ":" + strings.Join(normalized, ",")
+}
+
+func parseHashMembershipImportID(kind, id string) (string, []string, string, error) {
+	parts := strings.SplitN(id, ":", 3)
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", nil, "", fmt.Errorf("expected kind:target_id:hash1,hash2")
+	}
+	if parts[0] != kind {
+		return "", nil, "", fmt.Errorf("expected import ID kind %q", kind)
+	}
+	hashes, err := normalizeHashes(strings.Split(parts[2], ","))
+	if err != nil {
+		return "", nil, "", err
+	}
+	if len(hashes) == 0 {
+		return "", nil, "", fmt.Errorf("expected at least one SHA256 hash")
+	}
+	return parts[1], hashes, hashMembershipID(kind, parts[1], hashes), nil
+}
+
+func hashesSubset(available, wanted []string) bool {
+	normalizedAvailable, err := normalizeHashes(available)
+	if err != nil {
+		return false
+	}
+	normalizedWanted, err := normalizeHashes(wanted)
+	if err != nil {
+		return false
+	}
+	found := make(map[string]bool, len(normalizedAvailable))
+	for _, hash := range normalizedAvailable {
+		found[hash] = true
+	}
+	for _, hash := range normalizedWanted {
+		if !found[hash] {
+			return false
+		}
+	}
+	return true
 }
 
 func hashesBelong(results []client.HashQueryResult, kind, targetID string, hashes []string) bool {

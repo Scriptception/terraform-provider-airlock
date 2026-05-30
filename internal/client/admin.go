@@ -104,6 +104,18 @@ func (c *Client) RemoveBlocklistHash(ctx context.Context, blocklistID string, ha
 	return c.Post(ctx, "/v1/hash/blocklist/remove", nil, map[string]any{"blocklistid": blocklistID, "hashes": hashes}, nil)
 }
 
+func (c *Client) ExportApplication(ctx context.Context, applicationID string) ([]byte, error) {
+	return c.PostRaw(ctx, "/v1/application/export", Values("applicationid", applicationID), nil)
+}
+
+func (c *Client) ExportBaseline(ctx context.Context, baselineID string) ([]byte, error) {
+	return c.PostRaw(ctx, "/v1/baseline/export", Values("baselineid", baselineID), nil)
+}
+
+func (c *Client) ExportBlocklist(ctx context.Context, blocklistID string) ([]byte, error) {
+	return c.PostRaw(ctx, "/v1/blocklist/export", Values("blocklistid", blocklistID), nil)
+}
+
 func (c *Client) ListCommunicationLists(ctx context.Context) (json.RawMessage, error) {
 	var out json.RawMessage
 	err := c.Post(ctx, "/v1/commlist", nil, nil, &out)

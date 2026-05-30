@@ -31,6 +31,10 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - `airlock_reference_baselines`
 - `airlock_hash_query`
 
+## Internal helper endpoints
+
+- Application, baseline, and blocklist export endpoints are used as readback helpers for hash membership drift detection. They are intentionally not exposed as standalone Terraform resources because they are file/export actions rather than durable desired state.
+
 ## Intentionally not modeled as resources
 
 - Agent download/move/remove: operational endpoint.
@@ -38,4 +42,4 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - Exception approve/deny: ticket/workflow action rather than durable desired state.
 - License set/get: sensitive licensing workflow.
 - Logging and execution history: reporting/audit data.
-- Export endpoints: file/export actions.
+- Standalone export resources: file/export actions.

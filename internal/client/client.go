@@ -138,6 +138,46 @@ func (c *Client) Post(ctx context.Context, path string, params url.Values, body 
 	return nil
 }
 
+// PostRaw sends an Airlock POST request and returns the raw response body. Use this for documented non-JSON endpoints such as XML exports.
+func (c *Client) PostRaw(ctx context.Context, path string, params url.Values, body any) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("airlock: marshal request for %s: %w", path, err)
+		}
+		reqBody = bytes.NewReader(b)
+	}
+	u := *c.baseURL
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.TrimLeft(path, "/")
+	if len(params) > 0 {
+		u.RawQuery = params.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("airlock: build request for %s: %w", path, err)
+	}
+	req.Header.Set("X-ApiKey", c.apiKey)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("User-Agent", c.userAgent)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("airlock: POST %s: %w", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("airlock: read response for %s: %w", path, err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &APIError{StatusCode: resp.StatusCode, Path: path}
+	}
+	return respBody, nil
+}
+
 func Values(kv ...string) url.Values {
 	v := url.Values{}
 	for i := 0; i+1 < len(kv); i += 2 {
