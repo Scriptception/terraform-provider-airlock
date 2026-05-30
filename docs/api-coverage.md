@@ -39,4 +39,3 @@ Source: Airlock Digital REST API v6.1.2+ public Postman documentation.
 - License set/get: sensitive licensing workflow.
 - Logging and execution history: reporting/audit data.
 - Export endpoints: file/export actions.
-- Agent move/remove/download, OTP, exceptions, logging, license mutation, and file exports are operational workflows rather than durable Terraform state.
