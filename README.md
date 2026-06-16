@@ -7,6 +7,8 @@
 
 Manage [Airlock Digital](https://www.airlockdigital.com/) application control configuration as code.
 
+> **Independent project.** This is an unofficial, independent community provider built against Airlock Digital's publicly available REST API reference and verified API behavior. It is not affiliated with, endorsed by, sponsored by, or maintained by Airlock Digital or any employer, customer, or client of the maintainer. The provider requires an Airlock tenant URL and API key supplied by the user; no proprietary customer data, internal systems, or non-public implementation details are included.
+
 - **18 resources** for allowlist applications, categories, metarules, baselines, blocklists, policy groups, group settings, group policy relationships, trusted path/process/publisher rules, and hash membership.
 - **12 data sources** for reading existing Airlock configuration, group policy, group agents, communication lists, domain groups, reference baselines, hash membership, and inventory.
 - Built on [terraform-plugin-framework](https://developer.hashicorp.com/terraform/plugin/framework) (protocol v6).
