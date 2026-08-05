@@ -277,10 +277,18 @@ func (r *groupSettingsResource) UpgradeState(_ context.Context) map[int64]resour
 				}
 				next := zeroGroupSettingsModel(prior.GroupID.ValueString())
 				next.ID = prior.ID
-				settings, err := jsonObject(prior.SettingsJSON.ValueString())
-				if err != nil {
-					resp.Diagnostics.AddError("Unable to upgrade Airlock group settings state", fmt.Sprintf("settings_json is invalid: %v", err))
+				if prior.SettingsJSON.IsUnknown() {
+					resp.Diagnostics.AddError("Unable to upgrade Airlock group settings state", "settings_json is unknown")
 					return
+				}
+				settings := map[string]any{}
+				if !prior.SettingsJSON.IsNull() && strings.TrimSpace(prior.SettingsJSON.ValueString()) != "" {
+					var err error
+					settings, err = jsonObject(prior.SettingsJSON.ValueString())
+					if err != nil {
+						resp.Diagnostics.AddError("Unable to upgrade Airlock group settings state", fmt.Sprintf("settings_json is invalid: %v", err))
+						return
+					}
 				}
 				mergeGroupSettings(&next, settings)
 				next.clearWriteOnly()

@@ -188,3 +188,62 @@ func TestGroupSettingsStateUpgradeFromJSON(t *testing.T) {
 		t.Fatalf("targetvers was not migrated: %#v", got)
 	}
 }
+
+func TestGroupSettingsStateUpgradeLegacyJSONValidation(t *testing.T) {
+	tests := map[string]struct {
+		settingsJSON types.String
+		wantError    bool
+	}{
+		"null":       {settingsJSON: types.StringNull()},
+		"empty":      {settingsJSON: types.StringValue("")},
+		"whitespace": {settingsJSON: types.StringValue(" \n\t")},
+		"object":     {settingsJSON: types.StringValue(`{"poll_time":300}`)},
+		"malformed":  {settingsJSON: types.StringValue("{"), wantError: true},
+		"array":      {settingsJSON: types.StringValue(`[]`), wantError: true},
+		"JSON null":  {settingsJSON: types.StringValue(`null`), wantError: true},
+		"unknown":    {settingsJSON: types.StringUnknown(), wantError: true},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			prior := groupSettingsModelV0{
+				ID:           types.StringValue("group-1"),
+				GroupID:      types.StringValue("group-1"),
+				SettingsJSON: test.settingsJSON,
+				PolicyJSON:   types.StringValue(`{}`),
+			}
+			priorState := tfsdk.State{Schema: groupSettingsSchemaV0()}
+			if diags := priorState.Set(ctx, &prior); diags.HasError() {
+				t.Fatalf("set prior state: %v", diags)
+			}
+
+			upgrader := (&groupSettingsResource{}).UpgradeState(ctx)[0]
+			upgradeResp := &resource.UpgradeStateResponse{State: tfsdk.State{Schema: groupSettingsSchema()}}
+			upgrader.StateUpgrader(ctx, resource.UpgradeStateRequest{State: &priorState}, upgradeResp)
+			if test.wantError {
+				if !upgradeResp.Diagnostics.HasError() {
+					t.Fatal("state upgrade accepted invalid legacy settings_json")
+				}
+				return
+			}
+			if upgradeResp.Diagnostics.HasError() {
+				t.Fatalf("upgrade diagnostics: %v", upgradeResp.Diagnostics)
+			}
+
+			var got groupSettingsModel
+			if diags := upgradeResp.State.Get(ctx, &got); diags.HasError() {
+				t.Fatalf("get upgraded state: %v", diags)
+			}
+			if got.ID.ValueString() != "group-1" || got.GroupID.ValueString() != "group-1" {
+				t.Fatalf("resource identity was not preserved: %#v", got)
+			}
+			if name == "object" && got.PollTime.ValueInt64() != 300 {
+				t.Fatalf("non-empty settings_json was not migrated: %#v", got)
+			}
+			if !got.ProxyPasswordWO.IsNull() || !got.AgentStopCodeWO.IsNull() {
+				t.Fatal("write-only secrets entered upgraded state")
+			}
+		})
+	}
+}

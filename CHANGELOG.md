@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Accepted absent or empty legacy group settings JSON during the version 0 state upgrade so imported resources can refresh their typed settings. Malformed non-empty JSON still fails closed.
+
 ## 0.2.0
 
 - Replaced opaque group policy JSON with typed Airlock 6.1.4 settings and drift readback. Existing `settings_json` configuration must be converted to typed attributes during upgrade. Proxy passwords and agent stop codes are now write-only values with explicit version triggers.
