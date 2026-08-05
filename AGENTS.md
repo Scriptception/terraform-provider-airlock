@@ -36,7 +36,8 @@ Keep implementation, documentation, examples, tests, commits, and releases gener
    and a generic example.
 3. Regenerate documentation after every schema or example change.
 4. Update `docs/api-coverage.md` and `CHANGELOG.md` when coverage or behaviour changes.
-5. Run the smallest relevant checks, then the complete release gate before tagging.
+5. Run the smallest relevant checks, then the complete release gate before changing
+   `VERSION` for a release.
 
 ```sh
 gofmt -w <changed-go-files>
@@ -56,8 +57,10 @@ run `make generate`. Never bypass a generated-doc diff.
 
 ## Releases
 
-- Use semantic version tags from a tested commit on `main`.
-- Update the changelog before tagging.
-- Let the tag-triggered GitHub Actions workflow run GoReleaser and create signed assets.
+- Keep the exact semantic version in `VERSION` and add the matching changelog heading.
+- Merge the tested `VERSION` change to `main`; do not push release tags manually.
+- After the exact `main` test workflow succeeds, the release workflow verifies the
+  commit and version, creates the matching tag, and runs GoReleaser. A manual dispatch
+  safely retries an interrupted current-`main` release without moving an existing tag.
 - Verify the test workflow, release workflow, checksums, signature, manifest, and latest
   published version before considering a release complete.

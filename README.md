@@ -220,6 +220,9 @@ make fmt        # gofmt
 Read-only acceptance tests require `AIRLOCK_URL`, `AIRLOCK_API_KEY`, and `TF_ACC=1`. Mutation acceptance tests additionally require `AIRLOCK_ACC_MUTATION=1` and should only be run against an isolated Airlock environment with disposable `tf-acc-*` objects. Never commit live Airlock URLs, API keys, hostnames, user details, group names, or response fixtures.
 
 See [AGENTS.md](./AGENTS.md) for architecture, safety, validation, and release conventions.
+Releases use the exact semantic version in [`VERSION`](./VERSION). After the exact `main`
+test workflow succeeds, gated GitHub Actions creates the matching tag and signed
+GoReleaser assets when that version has not already been published.
 
 ## Contributing
 
