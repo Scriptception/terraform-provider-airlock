@@ -94,7 +94,7 @@ func (p *AirlockProvider) Resources(context.Context) []func() resource.Resource 
 func (p *AirlockProvider) DataSources(context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewApplicationsDataSource, NewApplicationCategoriesDataSource, NewBaselinesDataSource, NewBlocklistsDataSource, NewGroupsDataSource, NewAgentsDataSource,
-		NewGroupPolicyDataSource, NewGroupAgentsDataSource, NewCommunicationListsDataSource, NewDomainGroupsDataSource, NewReferenceBaselinesDataSource, NewHashQueryDataSource,
+		NewGroupPolicyDataSource, NewGroupAgentsDataSource, NewCommunicationListsDataSource, NewDomainGroupsDataSource, NewCloudGroupsDataSource, NewReferenceBaselinesDataSource, NewHashQueryDataSource,
 	}
 }
 func (p *AirlockProvider) Functions(context.Context) []func() function.Function { return nil }

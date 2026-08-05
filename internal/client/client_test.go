@@ -62,6 +62,42 @@ func TestListApplications(t *testing.T) {
 	}
 }
 
+func TestListCloudGroupsUsesInventoryEndpoint(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if got := r.URL.Path; got != "/v1/cloudgroups" {
+			t.Fatalf("unexpected path: %s", got)
+		}
+		if got := r.URL.RawQuery; got != "" {
+			t.Fatalf("unexpected query: %s", got)
+		}
+		if got := r.Header.Get("X-ApiKey"); got != "test-key" {
+			t.Fatalf("unexpected api key header")
+		}
+		_, _ = w.Write([]byte(`{"error":"Success","response":{"cloudgroups":[]}}`))
+	}))
+	defer s.Close()
+	c, err := New(Config{URL: s.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.ListCloudGroups(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		CloudGroups []json.RawMessage `json:"cloudgroups"`
+	}
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.CloudGroups == nil || len(decoded.CloudGroups) != 0 {
+		t.Fatalf("unexpected cloud groups response: %s", string(out))
+	}
+}
+
 func TestAPIErrorRedactsBody(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
@@ -185,17 +221,84 @@ func TestMoveAgentUsesArrayBody(t *testing.T) {
 	}
 }
 
-func TestUpdateGroupSettingsUsesUpdateAllBody(t *testing.T) {
+func TestGroupSettingsMutationContracts(t *testing.T) {
+	proxyUsername := "proxy-user"
+	proxyPassword := "proxy-password"
+	tests := []struct {
+		name   string
+		path   string
+		query  url.Values
+		invoke func(context.Context, *Client) error
+	}{
+		{name: "audit mode", path: "/v1/group/settings/auditmode", query: Values("groupid", "group-1", "auditmode", "1"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupAuditMode(ctx, "group-1", 1)
+		}},
+		{name: "notifications enabled", path: "/v1/group/settings/enable_notifications", query: Values("groupid", "group-1", "enable_notifications", "1"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupNotificationsEnabled(ctx, "group-1", 1)
+		}},
+		{name: "notification message", path: "/v1/group/settings/notification_message", query: Values("groupid", "group-1", "notification_message", "Blocked by policy"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupNotificationMessage(ctx, "group-1", "Blocked by policy")
+		}},
+		{name: "communication list", path: "/v1/group/settings/commlist", query: Values("groupid", "group-1", "commlistid", "list-1"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupCommunicationList(ctx, "group-1", "list-1")
+		}},
+		{name: "reflection", path: "/v1/group/settings/reflection", query: Values("groupid", "group-1", "reflection", "1"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupReflection(ctx, "group-1", 1)
+		}},
+		{name: "PowerShell lockdown", path: "/v1/group/settings/pslockdown", query: Values("groupid", "group-1", "pslockdown", "2"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupPowerShellLockdown(ctx, "group-1", 2)
+		}},
+		{name: "poll time", path: "/v1/group/settings/polltime", query: Values("groupid", "group-1", "polltime", "300"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupPollTime(ctx, "group-1", 300)
+		}},
+		{name: "proxy enabled", path: "/v1/group/settings/proxy", query: Values("groupid", "group-1", "proxy", "1"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupProxyEnabled(ctx, "group-1", 1)
+		}},
+		{name: "proxy settings", path: "/v1/group/settings/proxy/settings", query: Values("groupid", "group-1", "server", "proxy.example", "port", "8080", "authentication", "1", "username", proxyUsername, "password", proxyPassword), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupProxySettings(ctx, "group-1", "proxy.example", "8080", 1, &proxyUsername, &proxyPassword)
+		}},
+		{name: "script control", path: "/v1/group/settings/script", query: Values("groupid", "group-1", "scripts", "2"), invoke: func(ctx context.Context, c *Client) error {
+			return c.SetGroupScriptControl(ctx, "group-1", 2)
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Path; got != test.path {
+					t.Fatalf("path = %q, want %q", got, test.path)
+				}
+				if got := r.URL.Query().Encode(); got != test.query.Encode() {
+					t.Fatalf("query = %q, want %q", got, test.query.Encode())
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(body) != 0 {
+					t.Fatalf("request unexpectedly used a body")
+				}
+				_, _ = w.Write([]byte(`{"error":"Success"}`))
+			}))
+			defer s.Close()
+			c, err := New(Config{URL: s.URL, APIKey: "test-key"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.invoke(context.Background(), c); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestGroupProxySettingsOmitsOptionalCredentials(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/v1/group/settings/updateall" {
-			t.Fatalf("unexpected path: %s", got)
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		if body["groupid"] != "group-1" || body["script_enabled"] != float64(1) {
-			t.Fatalf("unexpected body: %#v", body)
+		want := Values("groupid", "group-1", "authentication", "0")
+		want.Set("server", "")
+		want.Set("port", "")
+		if got := r.URL.Query().Encode(); got != want.Encode() {
+			t.Fatalf("query = %q, want %q", got, want.Encode())
 		}
 		_, _ = w.Write([]byte(`{"error":"Success"}`))
 	}))
@@ -204,7 +307,7 @@ func TestUpdateGroupSettingsUsesUpdateAllBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.UpdateGroupSettings(context.Background(), map[string]any{"groupid": "group-1", "script_enabled": 1}); err != nil {
+	if err := c.SetGroupProxySettings(context.Background(), "group-1", "", "", 0, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 }

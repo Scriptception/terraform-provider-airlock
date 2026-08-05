@@ -113,6 +113,12 @@ func NewDomainGroupsDataSource() datasource.DataSource {
 	})
 }
 
+func NewCloudGroupsDataSource() datasource.DataSource {
+	return newJSONDataSource("cloud_groups", "Read cloud security groups known to Airlock.", func(ctx context.Context, c *client.Client, _ map[string]string) (any, error) {
+		return c.ListCloudGroups(ctx)
+	})
+}
+
 func NewReferenceBaselinesDataSource() datasource.DataSource {
 	return newListDataSource("reference_baselines", "List Airlock reference baselines available to import.", (*client.Client).ListReferenceBaselines)
 }

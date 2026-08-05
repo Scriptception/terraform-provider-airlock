@@ -26,6 +26,67 @@ func TestAgentGroupAssignmentDeleteFailsWithoutFallback(t *testing.T) {
 	}
 }
 
+func TestAgentGroupAssignmentCreateMovesAndVerifies(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests++
+		switch req.URL.Path {
+		case "/v1/agent/move":
+			_, _ = w.Write([]byte(`{"error":"Success"}`))
+		case "/v1/agent/find":
+			_, _ = w.Write([]byte(`{"error":"Success","response":{"agents":[{"agentid":"agent-1","groupid":"group-1"}]}}`))
+		default:
+			t.Fatalf("unexpected path: %s", req.URL.Path)
+		}
+	}))
+	defer server.Close()
+	apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &agentGroupAssignmentResource{configuredResource: configuredResource{client: apiClient}}
+	plan := agentAssignmentTestPlan(t, r, agentGroupAssignmentModel{
+		ID: types.StringUnknown(), AgentID: types.StringValue("agent-1"),
+		GroupID: types.StringValue("group-1"), DestroyFallbackGroupID: types.StringValue("fallback-1"),
+	})
+	resp := &resource.CreateResponse{State: tfsdk.State{Schema: plan.Schema}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: plan}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("create diagnostics: %v", resp.Diagnostics)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want move and verification", requests)
+	}
+}
+
+func TestAgentGroupAssignmentCreateFailsWhenMoveIsNotReflected(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/v1/agent/move":
+			_, _ = w.Write([]byte(`{"error":"Success"}`))
+		case "/v1/agent/find":
+			_, _ = w.Write([]byte(`{"error":"Success","response":{"agents":[{"agentid":"agent-1","groupid":"other-group"}]}}`))
+		default:
+			t.Fatalf("unexpected path: %s", req.URL.Path)
+		}
+	}))
+	defer server.Close()
+	apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &agentGroupAssignmentResource{configuredResource: configuredResource{client: apiClient}}
+	plan := agentAssignmentTestPlan(t, r, agentGroupAssignmentModel{
+		ID: types.StringUnknown(), AgentID: types.StringValue("agent-1"),
+		GroupID: types.StringValue("group-1"), DestroyFallbackGroupID: types.StringValue("fallback-1"),
+	})
+	resp := &resource.CreateResponse{State: tfsdk.State{Schema: plan.Schema}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: plan}, resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("create succeeded without verifying the destination group")
+	}
+}
+
 func TestAgentGroupAssignmentDeleteMovesAndVerifiesFallback(t *testing.T) {
 	requests := 0
 	moved := false
@@ -132,4 +193,15 @@ func agentAssignmentTestState(t *testing.T, r *agentGroupAssignmentResource, mod
 		t.Fatalf("set state: %v", diags)
 	}
 	return state
+}
+
+func agentAssignmentTestPlan(t *testing.T, r *agentGroupAssignmentResource, model agentGroupAssignmentModel) tfsdk.Plan {
+	t.Helper()
+	var schemaResp resource.SchemaResponse
+	r.Schema(context.Background(), resource.SchemaRequest{}, &schemaResp)
+	plan := tfsdk.Plan{Schema: schemaResp.Schema}
+	if diags := plan.Set(context.Background(), &model); diags.HasError() {
+		t.Fatalf("set plan: %v", diags)
+	}
+	return plan
 }
