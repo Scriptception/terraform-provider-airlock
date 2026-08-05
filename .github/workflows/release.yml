@@ -84,7 +84,9 @@ jobs:
               exit 1
               ;;
           esac
-          if [ "${release_exists}" != "true" ] && [ "${tag_exists}" = "true" ]; then
+          if [ "${release_exists}" = "true" ]; then
+            test "${tag_exists}" = "true"
+          elif [ "${tag_exists}" = "true" ]; then
             test "$(git rev-parse "refs/tags/${tag}^{commit}")" = "$(git rev-parse HEAD)"
           fi
 
