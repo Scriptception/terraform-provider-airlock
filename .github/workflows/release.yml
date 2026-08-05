@@ -17,7 +17,11 @@ concurrency:
 
 jobs:
   goreleaser:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +58,7 @@ jobs:
               --workflow test.yml \
               --branch main \
               --commit "$(git rev-parse HEAD)" \
+              --event push \
               --status success \
               --limit 1 \
               --json headSha \
@@ -61,7 +66,6 @@ jobs:
             test "${ci_sha}" = "$(git rev-parse HEAD)"
           fi
           if git rev-parse --verify --quiet "refs/tags/${tag}^{commit}" >/dev/null; then
-            test "$(git rev-parse "refs/tags/${tag}^{commit}")" = "$(git rev-parse HEAD)"
             tag_exists=true
           else
             tag_exists=false
@@ -80,6 +84,9 @@ jobs:
               exit 1
               ;;
           esac
+          if [ "${release_exists}" != "true" ] && [ "${tag_exists}" = "true" ]; then
+            test "$(git rev-parse "refs/tags/${tag}^{commit}")" = "$(git rev-parse HEAD)"
+          fi
 
           printf 'tag=%s\n' "${tag}" >> "${GITHUB_OUTPUT}"
           printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
