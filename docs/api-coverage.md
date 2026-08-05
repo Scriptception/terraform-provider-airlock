@@ -19,7 +19,7 @@ Source: Airlock Digital REST API v6.1.4+ public Postman documentation.
 
 ## Resource semantics
 
-- `airlock_group_settings` manages the complete durable Airlock 6.1.4 group policy settings through typed attributes. Proxy passwords and agent stop codes are write-only values with explicit version triggers. Destroy removes Terraform state only and does not reset the live settings.
+- `airlock_group_settings` reads the complete durable Airlock 6.1.4 group policy settings through typed attributes. It writes only audit mode, script control, poll time, PowerShell lockdown, proxy configuration, notifications, reflection, and communication-list settings using verified granular contracts. Unsupported differences and agent stop-code changes fail before any mutation. Proxy passwords are write-only with an explicit version trigger. Destroy removes Terraform state only and does not reset the live settings.
 - `airlock_application_hashes` and `airlock_blocklist_hashes` each manage the complete hash set for one package. Use one resource per package.
 - `airlock_baseline_hashes` is additive. It does not remove baseline or reference baseline content managed outside that resource.
 - `airlock_agent_group_assignment` requires an explicit fallback policy group on destroy, then moves and verifies the agent before removing state.
@@ -36,6 +36,7 @@ Source: Airlock Digital REST API v6.1.4+ public Postman documentation.
 - `airlock_group_agents`
 - `airlock_communication_lists`
 - `airlock_domain_groups`
+- `airlock_cloud_groups`
 - `airlock_reference_baselines`
 - `airlock_hash_query`
 

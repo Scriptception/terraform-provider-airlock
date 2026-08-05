@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -40,7 +41,7 @@ func (r *agentGroupAssignmentResource) Create(ctx context.Context, req resource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.MoveAgent(ctx, plan.AgentID.ValueString(), plan.GroupID.ValueString()); err != nil {
+	if err := r.moveAndVerify(ctx, plan.AgentID.ValueString(), plan.GroupID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Unable to move Airlock agent", err.Error())
 		return
 	}
@@ -77,13 +78,30 @@ func (r *agentGroupAssignmentResource) Update(ctx context.Context, req resource.
 		return
 	}
 	if !plan.GroupID.Equal(prior.GroupID) {
-		if err := r.client.MoveAgent(ctx, plan.AgentID.ValueString(), plan.GroupID.ValueString()); err != nil {
+		if err := r.moveAndVerify(ctx, plan.AgentID.ValueString(), plan.GroupID.ValueString()); err != nil {
 			resp.Diagnostics.AddError("Unable to move Airlock agent", err.Error())
 			return
 		}
 	}
 	plan.ID = plan.AgentID
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *agentGroupAssignmentResource) moveAndVerify(ctx context.Context, agentID, groupID string) error {
+	if err := r.client.MoveAgent(ctx, agentID, groupID); err != nil {
+		return err
+	}
+	agent, ok, err := r.client.GetAgent(ctx, agentID)
+	if err != nil {
+		return fmt.Errorf("verify agent group assignment: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("verify agent group assignment: Airlock did not return agent %s after the move", agentID)
+	}
+	if agent.GroupID != groupID {
+		return fmt.Errorf("verify agent group assignment: Airlock reported a different destination group after the move")
+	}
+	return nil
 }
 
 func (r *agentGroupAssignmentResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

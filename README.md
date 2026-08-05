@@ -10,7 +10,7 @@ Manage [Airlock Digital](https://www.airlockdigital.com/) application control co
 > **Independent project.** This is an unofficial, independent community provider built against Airlock Digital's publicly available REST API reference and verified API behavior. It is not affiliated with, endorsed by, sponsored by, or maintained by Airlock Digital or any employer, customer, or client of the maintainer. The provider requires an Airlock tenant URL and API key supplied by the user; no proprietary customer data, internal systems, or non-public implementation details are included.
 
 - **19 resources** for allowlist applications, categories, metarules, baselines, blocklists, policy groups, group settings, group policy relationships, trusted path/process/publisher rules, agent assignment, and hash membership.
-- **12 data sources** for reading existing Airlock configuration, group policy, group agents, communication lists, domain groups, reference baselines, hash membership, and inventory.
+- **13 data sources** for reading existing Airlock configuration, group policy, group agents, communication lists, domain groups, cloud groups, reference baselines, hash membership, and inventory.
 - Built on [terraform-plugin-framework](https://developer.hashicorp.com/terraform/plugin/framework) (protocol v6).
 - Targets the Airlock Digital REST API v6.1.4+.
 
@@ -49,7 +49,7 @@ Set `proxy_url` or `AIRLOCK_PROXY_URL` to force Airlock API requests through a s
 
 ## State and safety behaviour
 
-- `airlock_group_settings` uses typed fields for the complete durable Airlock 6.1.4 group policy settings. `proxy_password_wo` and `agent_stop_code_wo` are write-only and are not stored in Terraform state. Increment the corresponding `_wo_version` value when changing either secret. Destroy removes Terraform state only and does not reset the live policy group.
+- `airlock_group_settings` reads the complete durable Airlock 6.1.4 group policy settings. It writes only settings with verified granular API contracts and rejects unsupported differences before any mutation. `proxy_password_wo` is write-only and is never stored in Terraform state. Agent stop-code changes remain blocked until the granular contract is verified. Destroy removes Terraform state only and does not reset the live policy group.
 - `airlock_application_hashes` and `airlock_blocklist_hashes` each manage the complete hash set for one package. Use one resource per package. Removing a hash from configuration removes it from that package.
 - `airlock_baseline_hashes` remains additive because baseline and reference baseline content may also be managed outside Terraform. It manages only the hashes recorded by that resource.
 - Destroying `airlock_agent_group_assignment` fails unless `destroy_fallback_group_id` is configured. The provider moves the agent to that group and verifies the result before removing the resource from state.
@@ -70,7 +70,7 @@ Most raw API keys map directly to snake-case attributes. The less direct mapping
 - `targetvers[0].windows`, `targetvers[0].linux`, and `targetvers[0].macos` to the three `*_agent_version` attributes
 - `proxypass` and `agentstopcode` to `proxy_password_wo` and `agent_stop_code_wo`
 
-The two secret values are write-only in v0.2. Existing live secrets are not changed by state migration. To rotate one later, set its write-only value and increment the corresponding `_wo_version` attribute. Relationship arrays and other server-computed policy fields do not belong in this resource.
+The two secret values are write-only in v0.2 and existing live secrets are not changed by state migration. An authenticated proxy password can be rotated by setting `proxy_password_wo` and incrementing `proxy_password_wo_version`. Agent stop-code changes are rejected until its granular Airlock write contract is verified. Relationship arrays and other server-computed policy fields do not belong in this resource.
 
 ### Metarule criteria
 
@@ -187,6 +187,7 @@ Data sources:
 - `airlock_blocklists`
 - `airlock_communication_lists`
 - `airlock_domain_groups`
+- `airlock_cloud_groups`
 - `airlock_group_agents`
 - `airlock_group_policy`
 - `airlock_groups`
@@ -218,7 +219,7 @@ make fmt        # gofmt
 
 Read-only acceptance tests require `AIRLOCK_URL`, `AIRLOCK_API_KEY`, and `TF_ACC=1`. Mutation acceptance tests additionally require `AIRLOCK_ACC_MUTATION=1` and should only be run against an isolated Airlock environment with disposable `tf-acc-*` objects. Never commit live Airlock URLs, API keys, hostnames, user details, group names, or response fixtures.
 
-See [CLAUDE.md](./CLAUDE.md) for architecture notes, API scope decisions, and conventions for adding new resources.
+See [AGENTS.md](./AGENTS.md) for architecture, safety, validation, and release conventions.
 
 ## Contributing
 

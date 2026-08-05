@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Replaced unsafe whole-object group-settings updates with fail-closed, diff-only calls to verified granular Airlock endpoints. Unsupported differences and agent stop-code changes are rejected before any mutation; no-op reconciliation performs no writes.
+- Added the read-only `airlock_cloud_groups` inventory data source.
+- Verified agent group assignment create and update results through immediate Airlock read-back before saving Terraform state.
+
 ## 0.2.1
 
 - Accepted absent or empty legacy group settings JSON during the version 0 state upgrade so imported resources can refresh their typed settings. Malformed non-empty JSON still fails closed.

@@ -59,6 +59,23 @@ func (nonNegativeInt64Validator) ValidateInt64(_ context.Context, req validator.
 
 type stringOneOfValidator struct{ allowed []string }
 
+type nonEmptyStringValidator struct{}
+
+func (nonEmptyStringValidator) Description(context.Context) string {
+	return "must not be empty"
+}
+func (v nonEmptyStringValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+func (nonEmptyStringValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if strings.TrimSpace(req.ConfigValue.ValueString()) == "" {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid empty value", "The value must not be empty.")
+	}
+}
+
 func (v stringOneOfValidator) Description(context.Context) string {
 	return fmt.Sprintf("must be one of: %s", strings.Join(v.allowed, ", "))
 }

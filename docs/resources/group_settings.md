@@ -3,16 +3,19 @@
 page_title: "airlock_group_settings Resource - airlock"
 subcategory: ""
 description: |-
-  Manage the complete durable settings for an Airlock policy group. Relationship and server-computed policy fields are managed by other resources or omitted. Destroy removes Terraform state only and does not reset live group settings.
+  Read the complete durable settings for an Airlock policy group and reconcile the settings with verified granular write contracts. Unsupported setting differences are rejected before any write. Relationship and server-computed policy fields are managed by other resources or omitted. Destroy removes Terraform state only and does not reset live group settings.
 ---
 
 # airlock_group_settings (Resource)
 
-Manage the complete durable settings for an Airlock policy group. Relationship and server-computed policy fields are managed by other resources or omitted. Destroy removes Terraform state only and does not reset live group settings.
+Read the complete durable settings for an Airlock policy group and reconcile the settings with verified granular write contracts. Unsupported setting differences are rejected before any write. Relationship and server-computed policy fields are managed by other resources or omitted. Destroy removes Terraform state only and does not reset live group settings.
 
 ## Example Usage
 
 ```terraform
+# Terraform writes only settings with verified granular Airlock API contracts.
+# Keep the remaining required values equal to the live group; unsupported
+# differences are rejected before any setting is changed.
 resource "airlock_group_settings" "example" {
   group_id = "00000000-0000-0000-0000-000000000000"
 
@@ -67,56 +70,56 @@ resource "airlock_group_settings" "example" {
 ### Required
 
 - `audit_mode` (Number) Policy audit mode.
-- `batch` (Number) Batch script control mode.
-- `browser` (Number) Browser control mode.
-- `command` (Number) Command script control mode.
-- `command_line_enabled` (Number) Command-line control mode.
+- `batch` (Number) Batch script control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `browser` (Number) Browser control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `command` (Number) Command script control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `command_line_enabled` (Number) Command-line control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 - `communication_list_id` (String) Communication list ID.
-- `compiled_html` (Number) Compiled HTML control mode.
-- `custom_otp` (List of String) Ordered custom OTP settings.
-- `dylib` (Number) Dynamic library control mode.
-- `generalisation` (Number) Agent runtime generalisation mode.
+- `compiled_html` (Number) Compiled HTML control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `custom_otp` (List of String) Ordered custom OTP settings. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `dylib` (Number) Dynamic library control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `generalisation` (Number) Agent runtime generalisation mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 - `group_id` (String) Airlock policy group ID.
-- `html_applications` (Number) HTML application control mode.
-- `java_applications` (Number) Java application control mode.
-- `javascript` (Number) JavaScript control mode.
-- `linux_agent_version` (String) Target Linux agent version. Use an empty string when self-upgrade is disabled.
-- `mac_trusted_installer` (Number) macOS trusted installer mode.
-- `macos_agent_version` (String) Target macOS agent version. Use an empty string when self-upgrade is disabled.
-- `microsoft_trusted_installer` (Number) Microsoft Managed Installer trust mode.
-- `module_reload` (Number) Module reload control mode.
+- `html_applications` (Number) HTML application control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `java_applications` (Number) Java application control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `javascript` (Number) JavaScript control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `linux_agent_version` (String) Target Linux agent version. Use an empty string when self-upgrade is disabled. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `mac_trusted_installer` (Number) macOS trusted installer mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `macos_agent_version` (String) Target macOS agent version. Use an empty string when self-upgrade is disabled. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `microsoft_trusted_installer` (Number) Microsoft Managed Installer trust mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `module_reload` (Number) Module reload control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 - `notification_message` (String) Endpoint notification message.
 - `notifications_enabled` (Number) Whether endpoint notifications are enabled.
 - `poll_time` (Number) Agent polling interval in seconds.
-- `powershell` (Number) PowerShell script control mode.
+- `powershell` (Number) PowerShell script control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 - `powershell_lockdown` (Number) PowerShell language mode.
 - `proxy_authentication` (Number) Whether proxy authentication is enabled.
 - `proxy_enabled` (Number) Whether the policy proxy is enabled.
 - `proxy_port` (String) Proxy port. Use an empty string when proxy is disabled.
 - `proxy_server` (String) Proxy server name or address. Use an empty string when proxy is disabled.
 - `proxy_username` (String) Proxy username. Use an empty string when proxy authentication is disabled.
-- `python` (Number) Python script control mode.
+- `python` (Number) Python script control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 - `reflection` (Number) Assembly reflection prevention mode.
-- `scpt` (Number) AppleScript control mode.
+- `scpt` (Number) AppleScript control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 - `script_control` (Number) Script control mode. Maps to the Airlock script_enabled setting.
-- `script_custom` (Number) Custom script control mode.
-- `self_service` (Number) Self-service mode.
-- `self_upgrade` (Number) Agent self-upgrade mode.
-- `shell_script` (Number) Shell script control mode.
-- `trusted_config` (Boolean) Whether trusted configuration is enabled.
-- `trusted_upload` (Number) Trusted execution activity upload mode.
-- `vbscript` (Number) VBScript control mode.
-- `windows_agent_version` (String) Target Windows agent version. Use an empty string when self-upgrade is disabled.
-- `windows_installer` (Number) Windows Installer control mode.
-- `windows_script_component` (Number) Windows Script Component control mode.
+- `script_custom` (Number) Custom script control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `self_service` (Number) Self-service mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `self_upgrade` (Number) Agent self-upgrade mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `shell_script` (Number) Shell script control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `trusted_config` (Boolean) Whether trusted configuration is enabled. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `trusted_upload` (Number) Trusted execution activity upload mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `vbscript` (Number) VBScript control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `windows_agent_version` (String) Target Windows agent version. Use an empty string when self-upgrade is disabled. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `windows_installer` (Number) Windows Installer control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
+- `windows_script_component` (Number) Windows Script Component control mode. Terraform reads this value but rejects changes until its granular Airlock write contract is verified.
 
 ### Optional
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
-- `agent_stop_code_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Agent stop code. The value is sent only on create or when agent_stop_code_wo_version changes, and is never stored in Terraform state.
-- `agent_stop_code_wo_version` (Number) Trigger for applying agent_stop_code_wo. Increment this value when the stop code changes.
-- `proxy_password_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Proxy password. The value is sent only on create or when proxy_password_wo_version changes, and is never stored in Terraform state.
+- `agent_stop_code_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Reserved until the granular agent stop-code write contract is verified. Setting this argument is rejected without changing Airlock.
+- `agent_stop_code_wo_version` (Number) Reserved until the granular agent stop-code write contract is verified. Changing this value is rejected without changing Airlock.
+- `proxy_password_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Proxy password. Required when authenticated proxy settings are changed or proxy_password_wo_version changes. The value is never stored in Terraform state.
 - `proxy_password_wo_version` (Number) Trigger for applying proxy_password_wo. Increment this value when the password changes.
 
 ### Read-Only

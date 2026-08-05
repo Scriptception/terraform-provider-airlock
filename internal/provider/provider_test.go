@@ -39,4 +39,7 @@ func TestProviderSchema(t *testing.T) {
 			t.Fatalf("provider schema error: %s: %s", diagnostic.Summary, diagnostic.Detail)
 		}
 	}
+	if _, ok := resp.DataSourceSchemas["airlock_cloud_groups"]; !ok {
+		t.Fatal("provider schema does not register airlock_cloud_groups")
+	}
 }

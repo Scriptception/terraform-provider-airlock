@@ -1,5 +1,3 @@
-export PATH := /home/agent/.local/bin:/home/agent/.local/go-toolchain/go/bin:$(PATH)
-
 default: fmt lint test generate
 
 build:

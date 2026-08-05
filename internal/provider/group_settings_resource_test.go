@@ -3,12 +3,17 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/Scriptception/terraform-provider-airlock/internal/client"
 )
 
 func TestGroupSettingsSchemaUsesWriteOnlySecrets(t *testing.T) {
@@ -34,7 +39,7 @@ func TestGroupSettingsSchemaUsesWriteOnlySecrets(t *testing.T) {
 	}
 }
 
-func TestGroupSettingsReadMappingAndPayload(t *testing.T) {
+func TestGroupSettingsReadMapping(t *testing.T) {
 	model := zeroGroupSettingsModel("group-1")
 	raw := map[string]any{
 		"auditmode": 1, "script_enabled": 2, "cmdline_enabled": 1,
@@ -58,27 +63,6 @@ func TestGroupSettingsReadMappingAndPayload(t *testing.T) {
 		t.Fatalf("targetvers mapping failed: %#v", model)
 	}
 
-	payload := groupSettingsPayload(model)
-	for key, want := range map[string]any{
-		"groupid": "group-1", "script_enabled": int64(2), "cmdline_enabled": int64(1),
-		"mactrustedinstaller": int64(1), "mitrustedinstaller": int64(2),
-		"htmlapplication": int64(1), "javaapplication": int64(2),
-		"modreload": int64(1), "scpt": int64(1), "script_custom": int64(2),
-		"selfservice": int64(1), "trusted_config": true,
-	} {
-		if got := payload[key]; got != want {
-			t.Fatalf("payload[%q] = %#v, want %#v", key, got, want)
-		}
-	}
-	targetVersions, ok := payload["targetvers"].([]map[string]string)
-	if !ok || len(targetVersions) != 1 || targetVersions[0]["windows"] != "6.1.4.1" || targetVersions[0]["linux"] != "6.1.4.2" || targetVersions[0]["macos"] != "6.1.4.3" {
-		t.Fatalf("payload targetvers has unexpected shape: %#v", payload["targetvers"])
-	}
-	for _, excluded := range []string{"applications", "baselines", "blocklists", "paths", "publishers", "proxypass", "agentstopcode", "htmlapplications", "javaapplications", "windows", "linux", "macos"} {
-		if _, ok := payload[excluded]; ok {
-			t.Fatalf("payload unexpectedly contains %q", excluded)
-		}
-	}
 }
 
 func TestParseLiveGroupSettingsRequiresCompleteDurableShape(t *testing.T) {
@@ -86,7 +70,7 @@ func TestParseLiveGroupSettingsRequiresCompleteDurableShape(t *testing.T) {
 	model.WindowsAgentVersion = types.StringValue("6.1.4.1")
 	model.LinuxAgentVersion = types.StringValue("6.1.4.2")
 	model.MacOSAgentVersion = types.StringValue("6.1.4.3")
-	raw := groupSettingsPayload(model)
+	raw := completeLiveGroupSettings(model)
 	encoded, err := json.Marshal(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +95,7 @@ func TestParseLiveGroupSettingsRequiresCompleteDurableShape(t *testing.T) {
 }
 
 func TestParseLiveGroupSettingsAcceptsProvenNullTargetVersions(t *testing.T) {
-	raw := groupSettingsPayload(zeroGroupSettingsModel("group-1"))
+	raw := completeLiveGroupSettings(zeroGroupSettingsModel("group-1"))
 	raw["targetvers"] = nil
 
 	got, err := parseLiveGroupSettings("group-1", raw)
@@ -136,12 +120,237 @@ func TestParseLiveGroupSettingsRejectsUnprovenTargetVersionShapes(t *testing.T) 
 	}
 	for name, targetVersions := range tests {
 		t.Run(name, func(t *testing.T) {
-			raw := groupSettingsPayload(zeroGroupSettingsModel("group-1"))
+			raw := completeLiveGroupSettings(zeroGroupSettingsModel("group-1"))
 			raw["targetvers"] = targetVersions
 			if _, err := parseLiveGroupSettings("group-1", raw); err == nil {
 				t.Fatalf("accepted targetvers: %#v", targetVersions)
 			}
 		})
+	}
+}
+
+func TestGroupSettingsReconcileNoOpMakesNoWrites(t *testing.T) {
+	writes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		writes++
+		t.Fatalf("unexpected write to %s", req.URL.Path)
+	}))
+	defer server.Close()
+	apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	live := zeroGroupSettingsModel("group-1")
+	plan := live
+	prior := live
+	resourceImpl := &groupSettingsResource{configuredResource: configuredResource{client: apiClient}}
+	if err := resourceImpl.reconcileGroupSettings(context.Background(), live, plan, zeroGroupSettingsModel("group-1"), &prior); err != nil {
+		t.Fatalf("no-op reconciliation: %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("no-op reconciliation made %d writes", writes)
+	}
+}
+
+func TestGroupSettingsReconcileRejectsUnsupportedChangeBeforeWrite(t *testing.T) {
+	writes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		writes++
+		_, _ = w.Write([]byte(`{"error":"Success"}`))
+	}))
+	defer server.Close()
+	apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	live := zeroGroupSettingsModel("group-1")
+	plan := live
+	plan.AuditMode = types.Int64Value(1)
+	plan.CommandLineEnabled = types.Int64Value(1)
+	resourceImpl := &groupSettingsResource{configuredResource: configuredResource{client: apiClient}}
+	err = resourceImpl.reconcileGroupSettings(context.Background(), live, plan, zeroGroupSettingsModel("group-1"), nil)
+	if err == nil || !strings.Contains(err.Error(), "command_line_enabled") {
+		t.Fatalf("unsupported difference was not reported: %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("unsupported difference allowed %d writes", writes)
+	}
+}
+
+func TestGroupSettingsReconcileUsesOnlyChangedGranularEndpoints(t *testing.T) {
+	paths := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		paths = append(paths, req.URL.Path)
+		_, _ = w.Write([]byte(`{"error":"Success"}`))
+	}))
+	defer server.Close()
+	apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	live := zeroGroupSettingsModel("group-1")
+	plan := live
+	plan.AuditMode = types.Int64Value(1)
+	plan.NotificationsEnabled = types.Int64Value(1)
+	plan.NotificationMessage = types.StringValue("Blocked by policy")
+	plan.CommunicationListID = types.StringValue("list-1")
+	plan.Reflection = types.Int64Value(1)
+	plan.PowerShellLockdown = types.Int64Value(2)
+	plan.PollTime = types.Int64Value(300)
+	plan.ScriptControl = types.Int64Value(2)
+	plan.ProxyServer = types.StringValue("proxy.example")
+	plan.ProxyPort = types.StringValue("8080")
+	plan.ProxyEnabled = types.Int64Value(1)
+	prior := live
+	resourceImpl := &groupSettingsResource{configuredResource: configuredResource{client: apiClient}}
+	if err := resourceImpl.reconcileGroupSettings(context.Background(), live, plan, zeroGroupSettingsModel("group-1"), &prior); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"/v1/group/settings/auditmode",
+		"/v1/group/settings/enable_notifications",
+		"/v1/group/settings/notification_message",
+		"/v1/group/settings/commlist",
+		"/v1/group/settings/reflection",
+		"/v1/group/settings/pslockdown",
+		"/v1/group/settings/polltime",
+		"/v1/group/settings/script",
+		"/v1/group/settings/proxy/settings",
+		"/v1/group/settings/proxy",
+	}
+	if strings.Join(paths, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("paths = %#v, want %#v", paths, want)
+	}
+}
+
+func TestGroupSettingsReconcileRequiresProxyPasswordBeforeWrite(t *testing.T) {
+	tests := map[string]func(*groupSettingsModel, *groupSettingsModel){
+		"authenticated details change": func(live, plan *groupSettingsModel) {
+			live.ProxyAuthentication = types.Int64Value(1)
+			plan.ProxyAuthentication = types.Int64Value(1)
+			plan.ProxyServer = types.StringValue("proxy.example")
+		},
+		"password version change": func(live, plan *groupSettingsModel) {
+			live.ProxyAuthentication = types.Int64Value(1)
+			plan.ProxyAuthentication = types.Int64Value(1)
+			plan.ProxyPasswordWOVersion = types.Int64Value(1)
+		},
+		"password version change with authentication disabled": func(_, plan *groupSettingsModel) {
+			plan.ProxyPasswordWOVersion = types.Int64Value(1)
+		},
+	}
+	for name, change := range tests {
+		t.Run(name, func(t *testing.T) {
+			writes := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				writes++
+				_, _ = w.Write([]byte(`{"error":"Success"}`))
+			}))
+			defer server.Close()
+			apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			live := zeroGroupSettingsModel("group-1")
+			plan := live
+			change(&live, &plan)
+			prior := live
+			prior.ProxyPasswordWOVersion = types.Int64Value(0)
+			resourceImpl := &groupSettingsResource{configuredResource: configuredResource{client: apiClient}}
+			err = resourceImpl.reconcileGroupSettings(context.Background(), live, plan, zeroGroupSettingsModel("group-1"), &prior)
+			if err == nil || !strings.Contains(err.Error(), "proxy_password_wo") {
+				t.Fatalf("missing proxy password was not reported: %v", err)
+			}
+			if writes != 0 {
+				t.Fatalf("missing proxy password allowed %d writes", writes)
+			}
+		})
+	}
+}
+
+func TestGroupSettingsReconcileProxyPasswordVersionUsesProxySettingsOnly(t *testing.T) {
+	paths := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		paths = append(paths, req.URL.Path)
+		if got := req.URL.Query().Get("password"); got != "test-proxy-password" {
+			t.Fatalf("proxy password was not sent")
+		}
+		_, _ = w.Write([]byte(`{"error":"Success"}`))
+	}))
+	defer server.Close()
+	apiClient, err := client.New(client.Config{URL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	live := zeroGroupSettingsModel("group-1")
+	live.ProxyAuthentication = types.Int64Value(1)
+	live.ProxyServer = types.StringValue("proxy.example")
+	live.ProxyPort = types.StringValue("8080")
+	plan := live
+	plan.ProxyPasswordWOVersion = types.Int64Value(1)
+	prior := live
+	config := zeroGroupSettingsModel("group-1")
+	config.ProxyPasswordWO = types.StringValue("test-proxy-password")
+	resourceImpl := &groupSettingsResource{configuredResource: configuredResource{client: apiClient}}
+	if err := resourceImpl.reconcileGroupSettings(context.Background(), live, plan, config, &prior); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "/v1/group/settings/proxy/settings" {
+		t.Fatalf("paths = %#v, want only proxy/settings", paths)
+	}
+}
+
+func completeLiveGroupSettings(model groupSettingsModel) map[string]any {
+	return map[string]any{
+		"auditmode":              model.AuditMode.ValueInt64(),
+		"script_enabled":         model.ScriptControl.ValueInt64(),
+		"cmdline_enabled":        model.CommandLineEnabled.ValueInt64(),
+		"batch":                  model.Batch.ValueInt64(),
+		"powershell":             model.PowerShell.ValueInt64(),
+		"command":                model.Command.ValueInt64(),
+		"vbscript":               model.VBScript.ValueInt64(),
+		"javascript":             model.JavaScript.ValueInt64(),
+		"windowsinstaller":       model.WindowsInstaller.ValueInt64(),
+		"htmlapplication":        model.HTMLApplications.ValueInt64(),
+		"javaapplication":        model.JavaApplications.ValueInt64(),
+		"windowsscriptcomponent": model.WindowsScriptComponent.ValueInt64(),
+		"compiledhtml":           model.CompiledHTML.ValueInt64(),
+		"shellscript":            model.ShellScript.ValueInt64(),
+		"dylib":                  model.Dylib.ValueInt64(),
+		"python":                 model.Python.ValueInt64(),
+		"scpt":                   model.SCPT.ValueInt64(),
+		"script_custom":          model.ScriptCustom.ValueInt64(),
+		"modreload":              model.ModuleReload.ValueInt64(),
+		"poll_time":              model.PollTime.ValueInt64(),
+		"pslockdown":             model.PowerShellLockdown.ValueInt64(),
+		"proxyenabled":           model.ProxyEnabled.ValueInt64(),
+		"proxyserver":            model.ProxyServer.ValueString(),
+		"proxyport":              model.ProxyPort.ValueString(),
+		"proxyauth":              model.ProxyAuthentication.ValueInt64(),
+		"proxyuser":              model.ProxyUsername.ValueString(),
+		"enable_notifications":   model.NotificationsEnabled.ValueInt64(),
+		"notification_message":   model.NotificationMessage.ValueString(),
+		"generalisation":         model.Generalisation.ValueInt64(),
+		"browser":                model.Browser.ValueInt64(),
+		"mactrustedinstaller":    model.MacTrustedInstaller.ValueInt64(),
+		"mitrustedinstaller":     model.MicrosoftTrustedInstaller.ValueInt64(),
+		"trusted_upload":         model.TrustedUpload.ValueInt64(),
+		"trusted_config":         model.TrustedConfig.ValueBool(),
+		"selfservice":            model.SelfService.ValueInt64(),
+		"custom_otp":             stringsFromList(model.CustomOTP),
+		"selfupgrade":            model.SelfUpgrade.ValueInt64(),
+		"targetvers": []map[string]string{{
+			"windows": model.WindowsAgentVersion.ValueString(),
+			"linux":   model.LinuxAgentVersion.ValueString(),
+			"macos":   model.MacOSAgentVersion.ValueString(),
+		}},
+		"reflection": model.Reflection.ValueInt64(),
+		"commlistid": model.CommunicationListID.ValueString(),
 	}
 }
 

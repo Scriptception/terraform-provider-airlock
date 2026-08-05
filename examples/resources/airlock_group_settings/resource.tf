@@ -1,3 +1,6 @@
+# Terraform writes only settings with verified granular Airlock API contracts.
+# Keep the remaining required values equal to the live group; unsupported
+# differences are rejected before any setting is changed.
 resource "airlock_group_settings" "example" {
   group_id = "00000000-0000-0000-0000-000000000000"
 
