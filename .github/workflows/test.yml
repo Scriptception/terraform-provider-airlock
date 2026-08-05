@@ -4,7 +4,7 @@ on:
   pull_request:
     paths-ignore: ['README.md', 'CHANGELOG.md']
   push:
-    branches: [main]
+    branches: ['**']
     paths-ignore: ['README.md', 'CHANGELOG.md']
 
 permissions:
