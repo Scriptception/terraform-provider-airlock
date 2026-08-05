@@ -3,12 +3,12 @@
 page_title: "airlock_baseline_hashes Resource - airlock"
 subcategory: ""
 description: |-
-  Manage SHA256 hash membership for an Airlock baseline package.
+  Manage additive SHA256 hash membership for an Airlock baseline package. Reference baseline content is not authoritative or managed by this resource.
 ---
 
 # airlock_baseline_hashes (Resource)
 
-Manage SHA256 hash membership for an Airlock baseline package.
+Manage additive SHA256 hash membership for an Airlock baseline package. Reference baseline content is not authoritative or managed by this resource.
 
 ## Example Usage
 

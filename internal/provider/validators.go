@@ -40,6 +40,23 @@ func (positiveInt64Validator) ValidateInt64(_ context.Context, req validator.Int
 	}
 }
 
+type nonNegativeInt64Validator struct{}
+
+func (nonNegativeInt64Validator) Description(context.Context) string {
+	return "must be zero or greater"
+}
+func (v nonNegativeInt64Validator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+func (nonNegativeInt64Validator) ValidateInt64(_ context.Context, req validator.Int64Request, resp *validator.Int64Response) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if req.ConfigValue.ValueInt64() < 0 {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid non-negative value", "The value must be zero or greater.")
+	}
+}
+
 type stringOneOfValidator struct{ allowed []string }
 
 func (v stringOneOfValidator) Description(context.Context) string {

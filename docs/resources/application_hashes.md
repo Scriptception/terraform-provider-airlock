@@ -3,12 +3,12 @@
 page_title: "airlock_application_hashes Resource - airlock"
 subcategory: ""
 description: |-
-  Manage SHA256 hash membership for an Airlock application package.
+  Authoritatively manage the complete SHA256 hash membership for one Airlock application package. Configure only one resource per package.
 ---
 
 # airlock_application_hashes (Resource)
 
-Manage SHA256 hash membership for an Airlock application package.
+Authoritatively manage the complete SHA256 hash membership for one Airlock application package. Configure only one resource per package.
 
 ## Example Usage
 
@@ -26,7 +26,7 @@ resource "airlock_application_hashes" "example" {
 
 ### Required
 
-- `hashes` (Set of String) SHA256 hashes.
+- `hashes` (Set of String) Complete desired set of SHA256 hashes for the package.
 - `target_id` (String) Target Airlock package ID.
 
 ### Read-Only
@@ -40,5 +40,5 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-terraform import airlock_application_hashes.example application:1700000000:0000000000000000000000000000000000000000000000000000000000000000
+terraform import airlock_application_hashes.example application:1700000000
 ```

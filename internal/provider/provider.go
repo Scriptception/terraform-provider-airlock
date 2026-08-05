@@ -24,6 +24,7 @@ type AirlockProvider struct{ version string }
 type providerModel struct {
 	URL            types.String `tfsdk:"url"`
 	APIKey         types.String `tfsdk:"api_key"`
+	ProxyURL       types.String `tfsdk:"proxy_url"`
 	Insecure       types.Bool   `tfsdk:"insecure"`
 	TimeoutSeconds types.Int64  `tfsdk:"timeout_seconds"`
 }
@@ -39,6 +40,7 @@ func (p *AirlockProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 	resp.Schema = schema.Schema{Description: "Manage Airlock Digital application control configuration as code.", Attributes: map[string]schema.Attribute{
 		"url":             schema.StringAttribute{Description: "Base URL of the Airlock REST API, for example `https://airlock.example.com:3129`. May also be set via AIRLOCK_URL.", Optional: true, Validators: []validator.String{urlValidator{}}},
 		"api_key":         schema.StringAttribute{Description: "Airlock API key. May also be set via AIRLOCK_API_KEY.", Optional: true, Sensitive: true},
+		"proxy_url":       schema.StringAttribute{Description: "Explicit HTTP or HTTPS proxy for Airlock API requests. May also be set via AIRLOCK_PROXY_URL. Overrides the standard HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment behaviour when configured.", Optional: true, Validators: []validator.String{urlValidator{}}},
 		"insecure":        schema.BoolAttribute{Description: "Skip TLS certificate verification. May also be set via AIRLOCK_INSECURE. Disabled by default.", Optional: true},
 		"timeout_seconds": schema.Int64Attribute{Description: "HTTP request timeout in seconds. May also be set via AIRLOCK_TIMEOUT_SECONDS. Defaults to 30.", Optional: true, Validators: []validator.Int64{positiveInt64Validator{}}},
 	}}
@@ -51,6 +53,7 @@ func (p *AirlockProvider) Configure(ctx context.Context, req provider.ConfigureR
 	}
 	url := firstNonEmpty(data.URL.ValueString(), os.Getenv("AIRLOCK_URL"))
 	apiKey := firstNonEmpty(data.APIKey.ValueString(), os.Getenv("AIRLOCK_API_KEY"))
+	proxyURL := firstNonEmpty(data.ProxyURL.ValueString(), os.Getenv("AIRLOCK_PROXY_URL"))
 	insecure := false
 	if !data.Insecure.IsNull() && !data.Insecure.IsUnknown() {
 		insecure = data.Insecure.ValueBool()
@@ -72,7 +75,7 @@ func (p *AirlockProvider) Configure(ctx context.Context, req provider.ConfigureR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	c, err := client.New(client.Config{URL: url, APIKey: apiKey, Insecure: insecure, UserAgent: "terraform-provider-airlock/" + p.version, Timeout: time.Duration(timeout) * time.Second})
+	c, err := client.New(client.Config{URL: url, APIKey: apiKey, ProxyURL: proxyURL, Insecure: insecure, UserAgent: "terraform-provider-airlock/" + p.version, Timeout: time.Duration(timeout) * time.Second})
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to create Airlock client", err.Error())
 		return

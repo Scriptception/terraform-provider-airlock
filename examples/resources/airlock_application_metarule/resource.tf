@@ -3,13 +3,13 @@ resource "airlock_application_metarule" "example" {
   name       = "tf-example-allow-metarule"
   os         = "windows"
 
-  criteria_json = jsonencode([
+  criteria = [
     {
       field     = "publisher"
       operation = "match"
       value     = "Example Publisher"
     }
-  ])
+  ]
 
   settings_json = jsonencode({
     upload = 1

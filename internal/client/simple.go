@@ -26,6 +26,8 @@ type baseline struct {
 type blocklist struct {
 	BlocklistID string `json:"blocklistid"`
 	Name        string `json:"name"`
+	Audit       any    `json:"audit"`
+	AuditMode   any    `json:"auditmode"`
 }
 
 type group struct {

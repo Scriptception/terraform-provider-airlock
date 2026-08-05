@@ -3,19 +3,20 @@
 page_title: "airlock_agent_group_assignment Resource - airlock"
 subcategory: ""
 description: |-
-  Assign an Airlock endpoint agent to a policy group. Destroying this resource removes Terraform state only; Airlock does not expose a safe unassigned endpoint state, so use a replacement assignment to move the agent elsewhere.
+  Assign an Airlock endpoint agent to a policy group. Destroy fails closed unless an explicit fallback group is configured.
 ---
 
 # airlock_agent_group_assignment (Resource)
 
-Assign an Airlock endpoint agent to a policy group. Destroying this resource removes Terraform state only; Airlock does not expose a safe unassigned endpoint state, so use a replacement assignment to move the agent elsewhere.
+Assign an Airlock endpoint agent to a policy group. Destroy fails closed unless an explicit fallback group is configured.
 
 ## Example Usage
 
 ```terraform
 resource "airlock_agent_group_assignment" "example" {
-  agent_id = "00000000-0000-0000-0000-000000000000"
-  group_id = "11111111-1111-1111-1111-111111111111"
+  agent_id                  = "00000000-0000-0000-0000-000000000000"
+  group_id                  = "11111111-1111-1111-1111-111111111111"
+  destroy_fallback_group_id = "22222222-2222-2222-2222-222222222222"
 }
 ```
 
@@ -26,6 +27,10 @@ resource "airlock_agent_group_assignment" "example" {
 
 - `agent_id` (String) Airlock endpoint agent ID from the airlock_agents data source or /v1/agent/find.
 - `group_id` (String) Destination Airlock policy group ID.
+
+### Optional
+
+- `destroy_fallback_group_id` (String) Policy group to move the agent to before destroying this resource. Destroy fails when this is not configured.
 
 ### Read-Only
 

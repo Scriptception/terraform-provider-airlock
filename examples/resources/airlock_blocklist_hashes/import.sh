@@ -1,1 +1,1 @@
-terraform import airlock_blocklist_hashes.example blocklist:1700000002:0000000000000000000000000000000000000000000000000000000000000000
+terraform import airlock_blocklist_hashes.example blocklist:1700000002

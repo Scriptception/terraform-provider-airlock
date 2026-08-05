@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -44,7 +46,13 @@ func (c *Client) GetGroupPolicy(ctx context.Context, groupID string) (*Policy, e
 		p.Baselines = append(p.Baselines, Named{ID: b.BaselineID, Name: b.Name})
 	}
 	for _, b := range out.Blocklists {
-		p.Blocklists = append(p.Blocklists, Named{ID: b.BlocklistID, Name: b.Name})
+		attrs := map[string]string{}
+		if audit, ok := policyBool(b.Audit); ok {
+			attrs["audit"] = BoolInt(audit)
+		} else if audit, ok := policyBool(b.AuditMode); ok {
+			attrs["audit"] = BoolInt(audit)
+		}
+		p.Blocklists = append(p.Blocklists, Named{ID: b.BlocklistID, Name: b.Name, Attrs: attrs})
 	}
 	for _, v := range out.Paths {
 		p.Paths = append(p.Paths, Named{ID: v.Name, Name: v.Name, Attrs: map[string]string{"comment": v.Comment}})
@@ -59,6 +67,29 @@ func (c *Client) GetGroupPolicy(ctx context.Context, groupID string) (*Policy, e
 		p.Publishers = append(p.Publishers, Named{ID: v.Name, Name: v.Name, Attrs: map[string]string{"comment": v.Comment}})
 	}
 	return p, nil
+}
+
+func policyBool(value any) (bool, bool) {
+	switch value := value.(type) {
+	case bool:
+		return value, true
+	case float64:
+		return value != 0, true
+	case int:
+		return value != 0, true
+	case int64:
+		return value != 0, true
+	case string:
+		if parsed, err := strconv.ParseBool(strings.TrimSpace(value)); err == nil {
+			return parsed, true
+		}
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+			return parsed != 0, true
+		}
+	case fmt.Stringer:
+		return policyBool(value.String())
+	}
+	return false, false
 }
 
 func (c *Client) SetGroupApplication(ctx context.Context, groupID, applicationID string, approved bool) error {

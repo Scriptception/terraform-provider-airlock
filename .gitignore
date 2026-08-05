@@ -8,5 +8,6 @@ crash.*.log
 .terraformrc
 terraform.rc
 local-test/
+.local-tmp/
 dist/
 .DS_Store

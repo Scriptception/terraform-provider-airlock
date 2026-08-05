@@ -6,6 +6,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -57,6 +59,40 @@ func TestRelationshipResourcesReadOnlySchemaAttributes(t *testing.T) {
 			}
 			assertRelModel(t, got, tt.want)
 		})
+	}
+}
+
+func TestRelationshipStateWriterUpdatesResponseState(t *testing.T) {
+	ctx := context.Background()
+	resourceImpl := NewGroupBlocklistPolicyResource().(*relResource)
+	var schemaResp resource.SchemaResponse
+	resourceImpl.Schema(ctx, resource.SchemaRequest{}, &schemaResp)
+	type blocklistRelationshipState struct {
+		ID       types.String `tfsdk:"id"`
+		GroupID  types.String `tfsdk:"group_id"`
+		TargetID types.String `tfsdk:"target_id"`
+		Audit    types.Bool   `tfsdk:"audit"`
+	}
+	state := tfsdk.State{Schema: schemaResp.Schema}
+	if diags := state.Set(ctx, &blocklistRelationshipState{
+		ID: types.StringUnknown(), GroupID: types.StringValue("group-1"),
+		TargetID: types.StringValue("blocklist-1"), Audit: types.BoolUnknown(),
+	}); diags.HasError() {
+		t.Fatalf("initial state: %v", diags)
+	}
+	want := relModel{
+		ID: types.StringValue("group-1:blocklist-1"), GroupID: types.StringValue("group-1"),
+		TargetID: types.StringValue("blocklist-1"), Audit: types.BoolValue(true),
+	}
+	if diags := resourceImpl.setRelState(ctx, &state, want); diags.HasError() {
+		t.Fatalf("set relationship state: %v", diags)
+	}
+	var got blocklistRelationshipState
+	if diags := state.Get(ctx, &got); diags.HasError() {
+		t.Fatalf("read relationship state: %v", diags)
+	}
+	if got.ID.ValueString() != want.ID.ValueString() || !got.Audit.ValueBool() {
+		t.Fatalf("state was not updated: %#v", got)
 	}
 }
 

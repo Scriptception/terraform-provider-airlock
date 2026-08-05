@@ -3,12 +3,12 @@
 page_title: "airlock_group_settings Resource - airlock"
 subcategory: ""
 description: |-
-  Manage durable settings for an Airlock policy group using the update-all settings API. The settings JSON must contain the full desired settings payload for the group.
+  Manage the complete durable settings for an Airlock policy group. Relationship and server-computed policy fields are managed by other resources or omitted. Destroy removes Terraform state only and does not reset live group settings.
 ---
 
 # airlock_group_settings (Resource)
 
-Manage durable settings for an Airlock policy group using the update-all settings API. The settings JSON must contain the full desired settings payload for the group.
+Manage the complete durable settings for an Airlock policy group. Relationship and server-computed policy fields are managed by other resources or omitted. Destroy removes Terraform state only and does not reset live group settings.
 
 ## Example Usage
 
@@ -16,36 +16,48 @@ Manage durable settings for an Airlock policy group using the update-all setting
 resource "airlock_group_settings" "example" {
   group_id = "00000000-0000-0000-0000-000000000000"
 
-  settings_json = jsonencode({
-    auditmode            = 0
-    script_enabled       = 1
-    batch                = 1
-    powershell           = 1
-    command              = 1
-    vbscript             = 1
-    javascript           = 1
-    windowsinstaller     = 1
-    htmlapplications     = 1
-    javaapplications     = 1
-    windowsscriptcomponent = 1
-    compiledhtml         = 1
-    shellscript          = 1
-    dylib                = 1
-    python               = 1
-    poll_time            = 300
-    pslockdown           = 2
-    proxyenabled         = 0
-    enable_notifications = 1
-    notification_message = "This file was blocked by policy."
-    agentstopcode        = ""
-    generalisation       = 0
-    browser              = 2
-    mitrustedinstaller   = 1
-    trusted_upload       = 0
-    selfupgrade          = 0
-    reflection           = 0
-    commlistid           = "airlock-default-communication-list"
-  })
+  audit_mode                  = 0
+  script_control              = 1
+  command_line_enabled        = 1
+  batch                       = 1
+  powershell                  = 1
+  command                     = 1
+  vbscript                    = 1
+  javascript                  = 1
+  windows_installer           = 1
+  html_applications           = 1
+  java_applications           = 1
+  windows_script_component    = 1
+  compiled_html               = 1
+  shell_script                = 1
+  dylib                       = 1
+  python                      = 1
+  scpt                        = 1
+  script_custom               = 1
+  module_reload               = 1
+  poll_time                   = 300
+  powershell_lockdown         = 2
+  proxy_enabled               = 0
+  proxy_server                = ""
+  proxy_port                  = ""
+  proxy_authentication        = 0
+  proxy_username              = ""
+  notifications_enabled       = 1
+  notification_message        = "This file was blocked by policy."
+  generalisation              = 0
+  browser                     = 2
+  mac_trusted_installer       = 1
+  microsoft_trusted_installer = 1
+  trusted_upload              = 0
+  trusted_config              = false
+  self_service                = 0
+  custom_otp                  = []
+  self_upgrade                = 0
+  windows_agent_version       = ""
+  linux_agent_version         = ""
+  macos_agent_version         = ""
+  reflection                  = 0
+  communication_list_id       = "airlock-default-communication-list"
 }
 ```
 
@@ -54,13 +66,62 @@ resource "airlock_group_settings" "example" {
 
 ### Required
 
+- `audit_mode` (Number) Policy audit mode.
+- `batch` (Number) Batch script control mode.
+- `browser` (Number) Browser control mode.
+- `command` (Number) Command script control mode.
+- `command_line_enabled` (Number) Command-line control mode.
+- `communication_list_id` (String) Communication list ID.
+- `compiled_html` (Number) Compiled HTML control mode.
+- `custom_otp` (List of String) Ordered custom OTP settings.
+- `dylib` (Number) Dynamic library control mode.
+- `generalisation` (Number) Agent runtime generalisation mode.
 - `group_id` (String) Airlock policy group ID.
-- `settings_json` (String, Sensitive) JSON object sent to Airlock's group settings update-all endpoint. The provider injects groupid from group_id.
+- `html_applications` (Number) HTML application control mode.
+- `java_applications` (Number) Java application control mode.
+- `javascript` (Number) JavaScript control mode.
+- `linux_agent_version` (String) Target Linux agent version. Use an empty string when self-upgrade is disabled.
+- `mac_trusted_installer` (Number) macOS trusted installer mode.
+- `macos_agent_version` (String) Target macOS agent version. Use an empty string when self-upgrade is disabled.
+- `microsoft_trusted_installer` (Number) Microsoft Managed Installer trust mode.
+- `module_reload` (Number) Module reload control mode.
+- `notification_message` (String) Endpoint notification message.
+- `notifications_enabled` (Number) Whether endpoint notifications are enabled.
+- `poll_time` (Number) Agent polling interval in seconds.
+- `powershell` (Number) PowerShell script control mode.
+- `powershell_lockdown` (Number) PowerShell language mode.
+- `proxy_authentication` (Number) Whether proxy authentication is enabled.
+- `proxy_enabled` (Number) Whether the policy proxy is enabled.
+- `proxy_port` (String) Proxy port. Use an empty string when proxy is disabled.
+- `proxy_server` (String) Proxy server name or address. Use an empty string when proxy is disabled.
+- `proxy_username` (String) Proxy username. Use an empty string when proxy authentication is disabled.
+- `python` (Number) Python script control mode.
+- `reflection` (Number) Assembly reflection prevention mode.
+- `scpt` (Number) AppleScript control mode.
+- `script_control` (Number) Script control mode. Maps to the Airlock script_enabled setting.
+- `script_custom` (Number) Custom script control mode.
+- `self_service` (Number) Self-service mode.
+- `self_upgrade` (Number) Agent self-upgrade mode.
+- `shell_script` (Number) Shell script control mode.
+- `trusted_config` (Boolean) Whether trusted configuration is enabled.
+- `trusted_upload` (Number) Trusted execution activity upload mode.
+- `vbscript` (Number) VBScript control mode.
+- `windows_agent_version` (String) Target Windows agent version. Use an empty string when self-upgrade is disabled.
+- `windows_installer` (Number) Windows Installer control mode.
+- `windows_script_component` (Number) Windows Script Component control mode.
+
+### Optional
+
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
+- `agent_stop_code_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Agent stop code. The value is sent only on create or when agent_stop_code_wo_version changes, and is never stored in Terraform state.
+- `agent_stop_code_wo_version` (Number) Trigger for applying agent_stop_code_wo. Increment this value when the stop code changes.
+- `proxy_password_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Proxy password. The value is sent only on create or when proxy_password_wo_version changes, and is never stored in Terraform state.
+- `proxy_password_wo_version` (Number) Trigger for applying proxy_password_wo. Increment this value when the password changes.
 
 ### Read-Only
 
 - `id` (String) Airlock policy group ID.
-- `policy_json` (String, Sensitive) Current group policy JSON returned by Airlock after refresh. Marked sensitive because policy data may include proxy or environment details.
 
 ## Import
 

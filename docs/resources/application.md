@@ -28,7 +28,7 @@ resource "airlock_application" "example" {
 
 ### Optional
 
-- `category_id` (String) Application category ID.
+- `category_id` (String) Create-time application category ID. Airlock's application list does not return category provenance, so this value is preserved from configuration and is not verified during refresh.
 - `version` (String) Application package version.
 
 ### Read-Only

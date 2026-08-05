@@ -77,8 +77,20 @@ func (r *relResource) Create(ctx context.Context, req resource.CreateRequest, re
 		resp.Diagnostics.AddError("Unable to create Airlock "+r.spec.TypeName, err.Error())
 		return
 	}
+	if r.spec.Read != nil {
+		verified, ok, err := r.spec.Read(ctx, r.client, plan)
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to verify Airlock "+r.spec.TypeName, err.Error())
+			return
+		}
+		if !ok {
+			resp.Diagnostics.AddError("Unable to verify Airlock "+r.spec.TypeName, "Airlock did not return the relationship after creation.")
+			return
+		}
+		plan = verified
+	}
 	plan.ID = types.StringValue(r.spec.ID(plan))
-	resp.Diagnostics.Append(r.setRelState(ctx, resp.State, plan)...)
+	resp.Diagnostics.Append(r.setRelState(ctx, &resp.State, plan)...)
 }
 func (r *relResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	state, diags := r.relFromAttributes(ctx, req.State.GetAttribute)
@@ -97,10 +109,10 @@ func (r *relResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 			return
 		}
 		next.ID = types.StringValue(r.spec.ID(next))
-		resp.Diagnostics.Append(r.setRelState(ctx, resp.State, next)...)
+		resp.Diagnostics.Append(r.setRelState(ctx, &resp.State, next)...)
 		return
 	}
-	resp.Diagnostics.Append(r.setRelState(ctx, resp.State, state)...)
+	resp.Diagnostics.Append(r.setRelState(ctx, &resp.State, state)...)
 }
 func (r *relResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	plan, diags := r.relFromAttributes(ctx, req.Plan.GetAttribute)
@@ -112,8 +124,20 @@ func (r *relResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		resp.Diagnostics.AddError("Unable to update Airlock "+r.spec.TypeName, err.Error())
 		return
 	}
+	if r.spec.Read != nil {
+		verified, ok, err := r.spec.Read(ctx, r.client, plan)
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to verify Airlock "+r.spec.TypeName, err.Error())
+			return
+		}
+		if !ok {
+			resp.Diagnostics.AddError("Unable to verify Airlock "+r.spec.TypeName, "Airlock did not return the relationship after update.")
+			return
+		}
+		plan = verified
+	}
 	plan.ID = types.StringValue(r.spec.ID(plan))
-	resp.Diagnostics.Append(r.setRelState(ctx, resp.State, plan)...)
+	resp.Diagnostics.Append(r.setRelState(ctx, &resp.State, plan)...)
 }
 func (r *relResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	state, diags := r.relFromAttributes(ctx, req.State.GetAttribute)
@@ -149,7 +173,7 @@ func (r *relResource) relFromAttributes(ctx context.Context, get attrGetter) (re
 	}
 	return out, diags
 }
-func (r *relResource) setRelState(ctx context.Context, state tfsdk.State, m relModel) diag.Diagnostics {
+func (r *relResource) setRelState(ctx context.Context, state *tfsdk.State, m relModel) diag.Diagnostics {
 	var diags diag.Diagnostics
 	diags.Append(state.SetAttribute(ctx, pathRoot("id"), m.ID)...)
 	if r.hasAttr("group_id") {
@@ -224,11 +248,11 @@ func requiredRelString(description string) schema.StringAttribute {
 }
 
 func optionalRelString(description string) schema.StringAttribute {
-	return schema.StringAttribute{Optional: true, Computed: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace(), stringplanmodifier.UseStateForUnknown()}}
+	return schema.StringAttribute{Optional: true, Computed: true, Description: description, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}}
 }
 
 func optionalRelBool(description string) schema.BoolAttribute {
-	return schema.BoolAttribute{Optional: true, Description: description, PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()}}
+	return schema.BoolAttribute{Optional: true, Computed: true, Description: description, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplace()}}
 }
 
 var groupIDAttr = requiredRelString("Airlock policy group ID.")
@@ -266,6 +290,11 @@ func readGroupBlocklist(ctx context.Context, c *client.Client, m relModel) (relM
 	}
 	for _, item := range p.Blocklists {
 		if item.ID == m.TargetID.ValueString() {
+			audit, ok := item.Attrs["audit"]
+			if !ok {
+				return m, false, fmt.Errorf("Airlock policy response omitted audit mode for blocklist %s", m.TargetID.ValueString())
+			}
+			m.Audit = types.BoolValue(audit == "1" || strings.EqualFold(audit, "true"))
 			return m, true, nil
 		}
 	}

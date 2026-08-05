@@ -27,7 +27,7 @@ resource "airlock_baseline" "example" {
 
 ### Optional
 
-- `reference_name` (String) Reference baseline name to import instead of creating an empty baseline.
+- `reference_name` (String) Create-time reference baseline name to import instead of creating an empty baseline. Airlock does not return reference provenance during refresh.
 
 ### Read-Only
 

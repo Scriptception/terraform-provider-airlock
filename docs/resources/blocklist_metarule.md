@@ -18,13 +18,13 @@ resource "airlock_blocklist_metarule" "example" {
   name       = "tf-example-block-metarule"
   os         = "windows"
 
-  criteria_json = jsonencode([
+  criteria = [
     {
       field     = "path"
       operation = "wildcard"
       value     = "C:\\Temp\\*"
     }
-  ])
+  ]
 
   settings_json = jsonencode({
     notification      = 1
@@ -39,18 +39,28 @@ resource "airlock_blocklist_metarule" "example" {
 
 ### Required
 
-- `criteria_json` (String) JSON array of 1-5 Airlock metarule criteria objects.
 - `name` (String) Metarule name.
 - `os` (String) Operating system: windows, linux, or mac.
 - `package_id` (String) Target Airlock package ID.
 
 ### Optional
 
-- `settings_json` (String) Optional JSON object of Airlock metarule settings.
+- `criteria` (Attributes List) Ordered list of 1-5 metarule criteria. Use this instead of criteria_json. (see [below for nested schema](#nestedatt--criteria))
+- `criteria_json` (String) Deprecated JSON form of criteria. New configurations should use criteria. Server criteria IDs and ordering metadata are removed during canonical readback.
+- `settings_json` (String) Deprecated create-time JSON settings. Airlock does not provide reliable settings readback for drift detection. An imported resource may adopt this value into state once without an API mutation; later changes replace the resource.
 
 ### Read-Only
 
 - `id` (String) Airlock metarule UUID.
+
+<a id="nestedatt--criteria"></a>
+### Nested Schema for `criteria`
+
+Required:
+
+- `field` (String) Airlock criteria field.
+- `operation` (String) Airlock criteria operation.
+- `value` (String) Value to match.
 
 ## Import
 

@@ -24,5 +24,6 @@ provider "airlock" {
 
 - `api_key` (String, Sensitive) Airlock API key. May also be set via AIRLOCK_API_KEY.
 - `insecure` (Boolean) Skip TLS certificate verification. May also be set via AIRLOCK_INSECURE. Disabled by default.
+- `proxy_url` (String) Explicit HTTP or HTTPS proxy for Airlock API requests. May also be set via AIRLOCK_PROXY_URL. Overrides the standard HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment behaviour when configured.
 - `timeout_seconds` (Number) HTTP request timeout in seconds. May also be set via AIRLOCK_TIMEOUT_SECONDS. Defaults to 30.
 - `url` (String) Base URL of the Airlock REST API, for example `https://airlock.example.com:3129`. May also be set via AIRLOCK_URL.

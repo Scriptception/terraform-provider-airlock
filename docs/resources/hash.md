@@ -3,12 +3,12 @@
 page_title: "airlock_hash Resource - airlock"
 subcategory: ""
 description: |-
-  Register a SHA256 hash in the Airlock repository.
+  Register a SHA256 hash in the Airlock repository. Airlock does not expose a safe delete operation or return path provenance during refresh.
 ---
 
 # airlock_hash (Resource)
 
-Register a SHA256 hash in the Airlock repository.
+Register a SHA256 hash in the Airlock repository. Airlock does not expose a safe delete operation or return path provenance during refresh.
 
 ## Example Usage
 
@@ -24,8 +24,11 @@ resource "airlock_hash" "example" {
 
 ### Required
 
-- `path` (String) Associated file path.
 - `sha256` (String) SHA256 hash.
+
+### Optional
+
+- `path` (String) Create-time associated file path. This value is preserved from configuration and is not verified during refresh.
 
 ### Read-Only
 

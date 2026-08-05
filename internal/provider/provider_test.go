@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -25,8 +26,17 @@ func testAccPreCheck(t *testing.T) {
 }
 
 func TestProviderSchema(t *testing.T) {
-	p := New("test")()
-	if p == nil {
-		t.Fatal("provider is nil")
+	server, err := protoV6ProviderFactories["airlock"]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := server.GetProviderSchema(context.Background(), &tfprotov6.GetProviderSchemaRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, diagnostic := range resp.Diagnostics {
+		if diagnostic.Severity == tfprotov6.DiagnosticSeverityError {
+			t.Fatalf("provider schema error: %s: %s", diagnostic.Summary, diagnostic.Detail)
+		}
 	}
 }

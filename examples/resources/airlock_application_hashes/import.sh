@@ -1,1 +1,1 @@
-terraform import airlock_application_hashes.example application:1700000000:0000000000000000000000000000000000000000000000000000000000000000
+terraform import airlock_application_hashes.example application:1700000000

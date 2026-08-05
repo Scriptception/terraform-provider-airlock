@@ -3,13 +3,13 @@ resource "airlock_blocklist_metarule" "example" {
   name       = "tf-example-block-metarule"
   os         = "windows"
 
-  criteria_json = jsonencode([
+  criteria = [
     {
       field     = "path"
       operation = "wildcard"
       value     = "C:\\Temp\\*"
     }
-  ])
+  ]
 
   settings_json = jsonencode({
     notification      = 1

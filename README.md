@@ -9,19 +9,19 @@ Manage [Airlock Digital](https://www.airlockdigital.com/) application control co
 
 > **Independent project.** This is an unofficial, independent community provider built against Airlock Digital's publicly available REST API reference and verified API behavior. It is not affiliated with, endorsed by, sponsored by, or maintained by Airlock Digital or any employer, customer, or client of the maintainer. The provider requires an Airlock tenant URL and API key supplied by the user; no proprietary customer data, internal systems, or non-public implementation details are included.
 
-- **18 resources** for allowlist applications, categories, metarules, baselines, blocklists, policy groups, group settings, group policy relationships, trusted path/process/publisher rules, and hash membership.
+- **19 resources** for allowlist applications, categories, metarules, baselines, blocklists, policy groups, group settings, group policy relationships, trusted path/process/publisher rules, agent assignment, and hash membership.
 - **12 data sources** for reading existing Airlock configuration, group policy, group agents, communication lists, domain groups, reference baselines, hash membership, and inventory.
 - Built on [terraform-plugin-framework](https://developer.hashicorp.com/terraform/plugin/framework) (protocol v6).
-- Targets the Airlock Digital REST API v6.1.2+.
+- Targets the Airlock Digital REST API v6.1.4+.
 
 > **Scope.** This provider manages durable administrative configuration that belongs in source control. Short-lived, operational, reporting, or sensitive workflows such as OTP retrieval, exception approval, logs, license mutation, agent download/removal, and exports are intentionally not modeled as Terraform resources. See [docs/api-coverage.md](./docs/api-coverage.md) for the current API coverage map.
 
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) 1.11+
-- Airlock Digital REST API v6.1.2+
+- Airlock Digital REST API v6.1.4+
 - An Airlock API key with permissions for the resources you want to manage
-- [Go](https://go.dev/doc/install) 1.24+ only if building from source
+- [Go](https://go.dev/doc/install) 1.25.8+ only if building from source
 
 ## Quick start
 
@@ -30,7 +30,7 @@ terraform {
   required_providers {
     airlock = {
       source  = "Scriptception/airlock"
-      version = "~> 0.1"
+      version = "~> 0.2"
     }
   }
 }
@@ -43,7 +43,78 @@ provider "airlock" {
 }
 ```
 
-Provider settings also accept environment variables: `AIRLOCK_URL`, `AIRLOCK_API_KEY`, `AIRLOCK_INSECURE`, and `AIRLOCK_TIMEOUT_SECONDS`.
+Provider settings also accept environment variables: `AIRLOCK_URL`, `AIRLOCK_API_KEY`, `AIRLOCK_PROXY_URL`, `AIRLOCK_INSECURE`, and `AIRLOCK_TIMEOUT_SECONDS`.
+
+Set `proxy_url` or `AIRLOCK_PROXY_URL` to force Airlock API requests through a specific proxy. An explicit proxy overrides the standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment behaviour. When it is not set, the standard environment proxy behaviour remains active.
+
+## State and safety behaviour
+
+- `airlock_group_settings` uses typed fields for the complete durable Airlock 6.1.4 group policy settings. `proxy_password_wo` and `agent_stop_code_wo` are write-only and are not stored in Terraform state. Increment the corresponding `_wo_version` value when changing either secret. Destroy removes Terraform state only and does not reset the live policy group.
+- `airlock_application_hashes` and `airlock_blocklist_hashes` each manage the complete hash set for one package. Use one resource per package. Removing a hash from configuration removes it from that package.
+- `airlock_baseline_hashes` remains additive because baseline and reference baseline content may also be managed outside Terraform. It manages only the hashes recorded by that resource.
+- Destroying `airlock_agent_group_assignment` fails unless `destroy_fallback_group_id` is configured. The provider moves the agent to that group and verifies the result before removing the resource from state.
+
+## Upgrading from v0.1
+
+Back up the Terraform state first. Update the provider constraint and the affected HCL together, but do not run refresh, plan, or apply until the configuration migrations below are complete.
+
+### Group settings
+
+v0.2 removes `airlock_group_settings.settings_json` and `policy_json` in favour of required typed attributes. Replace each `settings_json` object with the typed fields shown in the [group settings example](./examples/resources/airlock_group_settings/resource.tf) before running `terraform init -upgrade`.
+
+Most raw API keys map directly to snake-case attributes. The less direct mappings are:
+
+- `script_enabled` to `script_control` and `cmdline_enabled` to `command_line_enabled`
+- `htmlapplication` or legacy `htmlapplications` to `html_applications`
+- `javaapplication` or legacy `javaapplications` to `java_applications`
+- `targetvers[0].windows`, `targetvers[0].linux`, and `targetvers[0].macos` to the three `*_agent_version` attributes
+- `proxypass` and `agentstopcode` to `proxy_password_wo` and `agent_stop_code_wo`
+
+The two secret values are write-only in v0.2. Existing live secrets are not changed by state migration. To rotate one later, set its write-only value and increment the corresponding `_wo_version` attribute. Relationship arrays and other server-computed policy fields do not belong in this resource.
+
+### Metarule criteria
+
+Convert existing application and blocklist metarule HCL from `criteria_json` to typed `criteria` in the same upgrade change. The v0.2 state upgrader canonicalises old state into typed criteria; matching typed HCL avoids an unnecessary metarule replacement.
+
+```hcl
+# v0.1
+criteria_json = jsonencode([
+  { field = "publisher", operation = "match", value = "Example Publisher" }
+])
+
+# v0.2
+criteria = [
+  { field = "publisher", operation = "match", value = "Example Publisher" }
+]
+```
+
+Do not copy server-only fields such as criteria IDs or ordering metadata. `settings_json` remains available because Airlock does not provide reliable settings readback.
+
+### Application and blocklist hashes
+
+v0.1 application and blocklist hash resources used additive, three-part IDs such as `application:<target_id>:<hashes>`. v0.2 uses one authoritative resource and a stable `application:<target_id>` or `blocklist:<target_id>` ID. It rejects Read, Update, and Delete for the old three-part IDs because several legacy chunks cannot safely manage one complete package.
+
+For each affected application or blocklist package:
+
+1. Consolidate the complete intended hash set into one resource in HCL. Do not run a refresh, plan, or apply yet.
+2. Run `terraform state rm` for every legacy chunk resource address.
+3. Set the provider constraint to `~> 0.2` and run `terraform init -upgrade`.
+4. Import the consolidated resource with `application:<target_id>` or `blocklist:<target_id>`.
+5. Run `terraform plan` and review the complete package hash set before applying.
+
+For example:
+
+```sh
+terraform state rm \
+  'airlock_application_hashes.chunk_1' \
+  'airlock_application_hashes.chunk_2'
+
+terraform import \
+  'airlock_application_hashes.package' \
+  'application:1700000000'
+```
+
+Do not use `terraform state mv` or refresh a legacy chunk address. Baseline hash resources keep their v0.1 additive ID and behaviour and do not use this migration.
 
 ## Walkthrough
 

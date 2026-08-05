@@ -31,6 +31,7 @@ type Client struct {
 type Config struct {
 	URL       string
 	APIKey    string
+	ProxyURL  string
 	Insecure  bool
 	UserAgent string
 	Timeout   time.Duration
@@ -70,6 +71,13 @@ func New(cfg Config) (*Client, error) {
 		timeout = defaultTimeout
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(cfg.ProxyURL)
+		if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" || (proxyURL.Scheme != "http" && proxyURL.Scheme != "https") {
+			return nil, fmt.Errorf("airlock: proxy_url must be an absolute HTTP or HTTPS URL")
+		}
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
 	if cfg.Insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- explicit provider opt-in
 	}
