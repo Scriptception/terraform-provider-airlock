@@ -1,0 +1,144 @@
+name: Delete merged pull request branches
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: delete-merged-pull-request-branches
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    if: >-
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main') ||
+      ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          ref: main
+      - name: Delete unchanged merged head branches
+        env:
+          CLOSED_PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${DEFAULT_BRANCH}" != "main" ]]; then
+            echo "::notice::The default branch is not main; no branches were deleted."
+            exit 0
+          fi
+
+          candidates="$(mktemp)"
+          trap 'rm -f "${candidates}"' EXIT
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            if [[ ! "${CLOSED_PR_NUMBER}" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::The closed pull request number is invalid."
+              exit 1
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${CLOSED_PR_NUMBER}" \
+              --jq 'select(.merged_at != null) | [.number, .base.ref, (.head.repo.full_name // ""), .head.ref, .head.sha] | @tsv' \
+              > "${candidates}"
+          else
+            gh api --paginate --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+              -f base=main \
+              -f direction=desc \
+              -f per_page=100 \
+              -f sort=updated \
+              -f state=closed \
+              --jq '.[] | select(.merged_at != null) | [.number, .base.ref, (.head.repo.full_name // ""), .head.ref, .head.sha] | @tsv' \
+              > "${candidates}"
+          fi
+
+          while IFS=$'\t' read -r number base head_repository branch expected; do
+            if [[ -z "${number}" ]]; then
+              continue
+            fi
+            if [[ ! "${number}" =~ ^[1-9][0-9]*$ || "${base}" != "main" ]]; then
+              echo "::warning::Pull request metadata is invalid; no branch was deleted."
+              exit 1
+            fi
+            if [[ "${head_repository,,}" != "${GITHUB_REPOSITORY,,}" ]]; then
+              echo "::notice::Pull request #${number} uses a fork; its branch was preserved."
+              continue
+            fi
+            if [[ -z "${branch}" || "${branch}" == "main" || "${branch}" == "${DEFAULT_BRANCH}" ]]; then
+              echo "::warning::Pull request #${number} names a protected branch; it was preserved."
+              continue
+            fi
+            if ! git check-ref-format --branch "${branch}" >/dev/null 2>&1; then
+              echo "::warning::Pull request #${number} has an invalid head branch; it was preserved."
+              continue
+            fi
+            if [[ ! "${expected}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::warning::Pull request #${number} has an invalid head SHA; its branch was preserved."
+              continue
+            fi
+
+            remote_ref="refs/heads/${branch}"
+            if ! remote_output="$(git ls-remote --refs origin "${remote_ref}")"; then
+              echo "::error::Could not read ${remote_ref}."
+              exit 1
+            fi
+            if [[ -z "${remote_output}" ]]; then
+              echo "::notice::Branch ${branch} is already absent."
+              continue
+            fi
+            if [[ "$(printf '%s\n' "${remote_output}" | wc -l | tr -d ' ')" != "1" ]]; then
+              echo "::error::Remote reference lookup for ${branch} was ambiguous."
+              exit 1
+            fi
+            current="$(printf '%s\n' "${remote_output}" | awk 'NR == 1 {print $1}')"
+            if [[ "${current}" != "${expected}" ]]; then
+              echo "::notice::Branch ${branch} advanced after merge; it was preserved."
+              continue
+            fi
+
+            open_count="$(
+              gh api --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+                -f head="${GITHUB_REPOSITORY_OWNER}:${branch}" \
+                -f per_page=1 \
+                -f state=open \
+                --jq 'length'
+            )"
+            if [[ "${open_count}" != "0" ]]; then
+              echo "::notice::Branch ${branch} is used by an open pull request; it was preserved."
+              continue
+            fi
+
+            if git push --force-with-lease="${remote_ref}:${expected}" origin ":${remote_ref}"; then
+              echo "Deleted unchanged merged branch ${branch}."
+              continue
+            fi
+
+            if ! remote_output="$(git ls-remote --refs origin "${remote_ref}")"; then
+              echo "::error::Deletion failed and ${remote_ref} could not be read back."
+              exit 1
+            fi
+            if [[ -z "${remote_output}" ]]; then
+              echo "::notice::Branch ${branch} was deleted concurrently."
+              continue
+            fi
+            current="$(printf '%s\n' "${remote_output}" | awk 'NR == 1 {print $1}')"
+            if [[ "${current}" != "${expected}" ]]; then
+              echo "::notice::Branch ${branch} advanced during cleanup; it was preserved."
+              continue
+            fi
+            echo "::error::GitHub rejected deletion of unchanged branch ${branch}."
+            exit 1
+          done < "${candidates}"
