@@ -88,7 +88,19 @@ criteria = [
 ]
 ```
 
-Do not copy server-only fields such as criteria IDs or ordering metadata. `settings_json` remains available because Airlock does not provide reliable settings readback.
+Do not copy server-only fields such as criteria IDs or ordering metadata. Criteria IDs
+are not stored in Terraform state. Typed `criteria` changes that require exactly one
+granular mutation call are updated in place. Known combined name-and-criteria changes
+and multi-criterion changes are rejected during planning and must be split into
+separate applies; the same check runs again before an update when planned values were
+previously unknown. Immediately before the mutation, the provider requires live
+criteria IDs to be present and unique, requires indexes to be ordered and contiguous,
+and compares the live values and order with refreshed prior state. For an update it
+uses the immediate preflight ID; after any supported change it checks the desired final
+values and all surviving preflight IDs on readback. Airlock's granular API has no
+conditional write, so concurrent console or API writes during apply are unsupported
+and can race the mutation. Package, operating-system, legacy `criteria_json`, and
+recorded `settings_json` changes retain their existing replacement behaviour.
 
 ### Application and blocklist hashes
 

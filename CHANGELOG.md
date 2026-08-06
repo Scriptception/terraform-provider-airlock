@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Added granular typed criteria changes for application and blocklist metarules without replacing the metarule. Known plans requiring more than one mutation call are rejected during planning and must be split into separate applies; the same guard runs before Update for previously unknown values. Immediately before a single mutation, the provider checks live criteria values against refreshed prior state and validates server-only criteria IDs and indexes; readback verifies desired final values and surviving preflight IDs. Concurrent console or API writes during apply are unsupported because Airlock does not provide conditional writes for these endpoints. Package, operating-system, legacy `criteria_json`, and recorded `settings_json` changes retain their existing replacement behaviour.
+
 ## 0.2.2
 
 - Replaced unsafe whole-object group-settings updates with fail-closed, diff-only calls to verified granular Airlock endpoints. Unsupported differences and agent stop-code changes are rejected before any mutation; no-op reconciliation performs no writes.

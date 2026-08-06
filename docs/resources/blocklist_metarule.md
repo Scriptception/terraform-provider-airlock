@@ -45,7 +45,7 @@ resource "airlock_blocklist_metarule" "example" {
 
 ### Optional
 
-- `criteria` (Attributes List) Ordered list of 1-5 metarule criteria. Use this instead of criteria_json. (see [below for nested schema](#nestedatt--criteria))
+- `criteria` (Attributes List) Ordered list of 1-5 metarule criteria. A change requiring exactly one granular mutation is applied without replacing the metarule; split combined or multi-criterion changes into separate applies. Use this instead of criteria_json. (see [below for nested schema](#nestedatt--criteria))
 - `criteria_json` (String) Deprecated JSON form of criteria. New configurations should use criteria. Server criteria IDs and ordering metadata are removed during canonical readback.
 - `settings_json` (String) Deprecated create-time JSON settings. Airlock does not provide reliable settings readback for drift detection. An imported resource may adopt this value into state once without an API mutation; later changes replace the resource.
 

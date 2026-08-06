@@ -101,6 +101,18 @@ func (c *Client) UpdateApplicationMetaruleName(ctx context.Context, id, name str
 	return c.Post(ctx, "/v1/application/metarule/update", nil, map[string]any{"metaruleid": id, "name": name}, nil)
 }
 
+func (c *Client) AddApplicationMetaruleCriterion(ctx context.Context, metaruleID, field, operation, value string) error {
+	return c.addMetaruleCriterion(ctx, "/v1/application/metarule/criteria/add", metaruleID, field, operation, value)
+}
+
+func (c *Client) UpdateApplicationMetaruleCriterion(ctx context.Context, criterionID, field, operation, value string) error {
+	return c.updateMetaruleCriterion(ctx, "/v1/application/metarule/criteria/update", criterionID, field, operation, value)
+}
+
+func (c *Client) DeleteApplicationMetaruleCriterion(ctx context.Context, criterionID string) error {
+	return c.deleteMetaruleCriterion(ctx, "/v1/application/metarule/criteria/delete", criterionID)
+}
+
 func (c *Client) DeleteApplicationMetarule(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/application/metarule/delete", nil, map[string]any{"metaruleid": id}, nil)
 }
@@ -127,8 +139,42 @@ func (c *Client) UpdateBlocklistMetaruleName(ctx context.Context, id, name strin
 	return c.Post(ctx, "/v1/blocklist/metarule/update", nil, map[string]any{"metaruleid": id, "name": name}, nil)
 }
 
+func (c *Client) AddBlocklistMetaruleCriterion(ctx context.Context, metaruleID, field, operation, value string) error {
+	return c.addMetaruleCriterion(ctx, "/v1/blocklist/metarule/criteria/add", metaruleID, field, operation, value)
+}
+
+func (c *Client) UpdateBlocklistMetaruleCriterion(ctx context.Context, criterionID, field, operation, value string) error {
+	return c.updateMetaruleCriterion(ctx, "/v1/blocklist/metarule/criteria/update", criterionID, field, operation, value)
+}
+
+func (c *Client) DeleteBlocklistMetaruleCriterion(ctx context.Context, criterionID string) error {
+	return c.deleteMetaruleCriterion(ctx, "/v1/blocklist/metarule/criteria/delete", criterionID)
+}
+
 func (c *Client) DeleteBlocklistMetarule(ctx context.Context, id string) error {
 	return c.Post(ctx, "/v1/blocklist/metarule/delete", nil, map[string]any{"metaruleid": id}, nil)
+}
+
+func (c *Client) addMetaruleCriterion(ctx context.Context, path, metaruleID, field, operation, value string) error {
+	return c.Post(ctx, path, nil, map[string]any{
+		"metaruleid": metaruleID,
+		"field":      field,
+		"operation":  operation,
+		"value":      value,
+	}, nil)
+}
+
+func (c *Client) updateMetaruleCriterion(ctx context.Context, path, criterionID, field, operation, value string) error {
+	return c.Post(ctx, path, nil, map[string]any{
+		"criteriaid": criterionID,
+		"field":      field,
+		"operation":  operation,
+		"value":      value,
+	}, nil)
+}
+
+func (c *Client) deleteMetaruleCriterion(ctx context.Context, path, criterionID string) error {
+	return c.Post(ctx, path, nil, map[string]any{"criteriaid": criterionID}, nil)
 }
 
 func (c *Client) QueryHashes(ctx context.Context, hashes []string) ([]HashQueryResult, error) {
