@@ -94,17 +94,44 @@ func (r *metaruleResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		"criteria": schema.ListNestedAttribute{
 			Optional:    true,
 			Computed:    true,
-			Description: "Ordered list of 1-5 metarule criteria. Use this instead of criteria_json.",
+			Description: "Ordered list of 1-5 metarule criteria. A change requiring exactly one granular mutation is applied without replacing the metarule; split combined or multi-criterion changes into separate applies. Use this instead of criteria_json.",
 			NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 				"field":     schema.StringAttribute{Required: true, Description: "Airlock criteria field."},
 				"operation": schema.StringAttribute{Required: true, Description: "Airlock criteria operation."},
 				"value":     schema.StringAttribute{Required: true, Description: "Value to match."},
 			}},
-			PlanModifiers: []planmodifier.List{metaruleCriteriaRepresentationModifier{}, listplanmodifier.UseStateForUnknown(), listplanmodifier.RequiresReplace()},
+			PlanModifiers: []planmodifier.List{metaruleCriteriaRepresentationModifier{}, listplanmodifier.UseStateForUnknown()},
 		},
 		"criteria_json": schema.StringAttribute{Optional: true, Description: "Deprecated JSON form of criteria. New configurations should use criteria. Server criteria IDs and ordering metadata are removed during canonical readback.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"settings_json": optionalComputedCreateOnlyString("Deprecated create-time JSON settings. Airlock does not provide reliable settings readback for drift detection. An imported resource may adopt this value into state once without an API mutation; later changes replace the resource."),
 	}}
+}
+func (r *metaruleResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var plan metaruleModel
+	var prior metaruleModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() || !metarulePlanSupportsInPlaceUpdate(prior, plan) {
+		return
+	}
+
+	priorCriteria, priorCriteriaKnown := knownTypedMetaruleCriteria(ctx, prior)
+	desiredCriteria, desiredCriteriaKnown := knownTypedMetaruleCriteria(ctx, plan)
+	mutationCount := 0
+	if priorCriteriaKnown && desiredCriteriaKnown {
+		mutationCount = metaruleCriteriaMutationCount(priorCriteria, desiredCriteria)
+	} else {
+		return
+	}
+	if !prior.Name.IsNull() && !prior.Name.IsUnknown() && !plan.Name.IsNull() && !plan.Name.IsUnknown() && !plan.Name.Equal(prior.Name) {
+		mutationCount++
+	}
+	if mutationCount > 1 {
+		resp.Diagnostics.AddError(metaruleMultiMutationSummary, metaruleMultiMutationDetail(mutationCount))
+	}
 }
 func (r *metaruleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan metaruleModel
@@ -185,23 +212,66 @@ func (r *metaruleResource) Update(ctx context.Context, req resource.UpdateReques
 		resp.Diagnostics.AddError("Update not supported", "Changing recorded metarule settings_json requires replacement.")
 		return
 	}
-	if settingsAdoption && plan.Name.Equal(prior.Name) {
-		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
-		return
-	}
-	if plan.Name.Equal(prior.Name) {
-		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
-		return
-	}
-	var err error
-	if r.kind == applicationMetarule {
-		err = r.client.UpdateApplicationMetaruleName(ctx, prior.ID.ValueString(), plan.Name.ValueString())
-	} else {
-		err = r.client.UpdateBlocklistMetaruleName(ctx, prior.ID.ValueString(), plan.Name.ValueString())
-	}
+	desiredCriteria, err := metaruleCriteriaFromModel(ctx, plan)
 	if err != nil {
-		resp.Diagnostics.AddError("Unable to update Airlock metarule", err.Error())
+		resp.Diagnostics.AddError("Invalid Airlock metarule", err.Error())
 		return
+	}
+	priorCriteria, err := metaruleCriteriaFromModel(ctx, prior)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid prior Airlock metarule state", err.Error())
+		return
+	}
+	criteriaChanged := !metaruleCriteriaEqual(priorCriteria, desiredCriteria)
+	nameChanged := !plan.Name.Equal(prior.Name)
+	if !criteriaChanged && !nameChanged {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
+	mutationCount := metaruleCriteriaMutationCount(priorCriteria, desiredCriteria)
+	if nameChanged {
+		mutationCount++
+	}
+	if mutationCount > 1 {
+		resp.Diagnostics.AddError(metaruleMultiMutationSummary, metaruleMultiMutationDetail(mutationCount))
+		return
+	}
+
+	if criteriaChanged {
+		liveCriteria, err := r.readLiveMetaruleCriteria(ctx, plan.PackageID.ValueString(), prior.ID.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to read Airlock metarule criteria before update", err.Error())
+			return
+		}
+		if err := validateLiveMetaruleCriteria(liveCriteria, priorCriteria); err != nil {
+			resp.Diagnostics.AddError("Airlock metarule criteria changed outside Terraform", err.Error())
+			return
+		}
+		if err := r.reconcileMetaruleCriteria(ctx, prior.ID.ValueString(), liveCriteria, desiredCriteria); err != nil {
+			resp.Diagnostics.AddError("Unable to update Airlock metarule criteria", err.Error())
+			return
+		}
+		finalCriteria, err := r.readLiveMetaruleCriteria(ctx, plan.PackageID.ValueString(), prior.ID.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to verify Airlock metarule criteria", err.Error())
+			return
+		}
+		if err := validateReconciledMetaruleCriteria(finalCriteria, desiredCriteria, liveCriteria); err != nil {
+			resp.Diagnostics.AddError("Airlock metarule criteria verification failed", err.Error())
+			return
+		}
+	}
+
+	if nameChanged {
+		if r.kind == applicationMetarule {
+			err = r.client.UpdateApplicationMetaruleName(ctx, prior.ID.ValueString(), plan.Name.ValueString())
+		} else {
+			err = r.client.UpdateBlocklistMetaruleName(ctx, prior.ID.ValueString(), plan.Name.ValueString())
+		}
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to update Airlock metarule", err.Error())
+			return
+		}
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -293,6 +363,224 @@ type metaruleCriterion struct {
 	Field     string `json:"field"`
 	Operation string `json:"operation"`
 	Value     string `json:"value"`
+}
+
+type liveMetaruleCriterion struct {
+	ID        string
+	Index     int
+	Criterion metaruleCriterion
+}
+
+func (r *metaruleResource) readLiveMetaruleCriteria(ctx context.Context, packageID, metaruleID string) ([]liveMetaruleCriterion, error) {
+	rules, err := r.listMetarules(ctx, packageID)
+	if err != nil {
+		return nil, err
+	}
+	for _, rule := range rules {
+		if rule.ID != metaruleID {
+			continue
+		}
+		if len(rule.Criteria) == 0 || string(rule.Criteria) == "null" {
+			return nil, fmt.Errorf("Airlock returned no criteria for the metarule")
+		}
+		return decodeLiveMetaruleCriteria(rule.Criteria)
+	}
+	return nil, fmt.Errorf("Airlock no longer returned the metarule")
+}
+
+func decodeLiveMetaruleCriteria(raw []byte) ([]liveMetaruleCriterion, error) {
+	var objects []struct {
+		ID        string `json:"criteriaid"`
+		Index     *int   `json:"index"`
+		Field     string `json:"field"`
+		Operation string `json:"operation"`
+		Value     string `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &objects); err != nil {
+		return nil, fmt.Errorf("decode live criteria: %w", err)
+	}
+	if len(objects) < 1 || len(objects) > 5 {
+		return nil, fmt.Errorf("Airlock returned %d criteria; expected between 1 and 5", len(objects))
+	}
+	live := make([]liveMetaruleCriterion, 0, len(objects))
+	seenIDs := make(map[string]struct{}, len(objects))
+	for position, object := range objects {
+		if strings.TrimSpace(object.ID) == "" {
+			return nil, fmt.Errorf("Airlock criterion at response position %d has no criteria ID", position)
+		}
+		if object.Index == nil {
+			return nil, fmt.Errorf("Airlock criterion at response position %d has no index", position)
+		}
+		if _, exists := seenIDs[object.ID]; exists {
+			return nil, fmt.Errorf("Airlock returned a duplicate criteria ID")
+		}
+		seenIDs[object.ID] = struct{}{}
+		live = append(live, liveMetaruleCriterion{
+			ID:        object.ID,
+			Index:     *object.Index,
+			Criterion: metaruleCriterion{Field: object.Field, Operation: object.Operation, Value: object.Value},
+		})
+	}
+	sort.Slice(live, func(i, j int) bool { return live[i].Index < live[j].Index })
+	for index, criterion := range live {
+		if criterion.Index != index {
+			return nil, fmt.Errorf("Airlock criteria indexes are not contiguous from zero")
+		}
+	}
+	return live, nil
+}
+
+func validateLiveMetaruleCriteria(live []liveMetaruleCriterion, prior []metaruleCriterion) error {
+	if len(live) != len(prior) {
+		return fmt.Errorf("live criteria count differs from prior state; refresh and re-plan before applying")
+	}
+	for index := range prior {
+		if live[index].Criterion != prior[index] {
+			return fmt.Errorf("live criterion at index %d differs from prior state; refresh and re-plan before applying", index)
+		}
+	}
+	return nil
+}
+
+func validateReconciledMetaruleCriteria(live []liveMetaruleCriterion, desired []metaruleCriterion, priorLive []liveMetaruleCriterion) error {
+	if len(live) != len(desired) {
+		return fmt.Errorf("live criteria count is %d after update; expected %d", len(live), len(desired))
+	}
+	for index := range desired {
+		if live[index].Criterion != desired[index] {
+			return fmt.Errorf("live criterion at index %d does not match the planned value after update", index)
+		}
+		if index < len(priorLive) && live[index].ID != priorLive[index].ID {
+			return fmt.Errorf("Airlock replaced the criterion at index %d instead of updating it in place", index)
+		}
+	}
+	return nil
+}
+
+func (r *metaruleResource) reconcileMetaruleCriteria(ctx context.Context, metaruleID string, live []liveMetaruleCriterion, desired []metaruleCriterion) error {
+	if mutationCount := metaruleCriteriaMutationCount(criteriaFromLiveMetaruleCriteria(live), desired); mutationCount > 1 {
+		return fmt.Errorf("criteria change requires %d mutation calls; at most one is supported per apply", mutationCount)
+	}
+	shared := min(len(live), len(desired))
+	for index := 0; index < shared; index++ {
+		if live[index].Criterion == desired[index] {
+			continue
+		}
+		if err := r.updateMetaruleCriterion(ctx, live[index].ID, desired[index]); err != nil {
+			return fmt.Errorf("update criterion at index %d: %w", index, err)
+		}
+	}
+	for index := shared; index < len(desired); index++ {
+		if err := r.addMetaruleCriterion(ctx, metaruleID, desired[index]); err != nil {
+			return fmt.Errorf("add criterion at index %d: %w", index, err)
+		}
+	}
+	for index := len(live) - 1; index >= len(desired); index-- {
+		if err := r.deleteMetaruleCriterion(ctx, live[index].ID); err != nil {
+			return fmt.Errorf("delete criterion at index %d: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func metaruleCriteriaMutationCount(prior, desired []metaruleCriterion) int {
+	shared := min(len(prior), len(desired))
+	count := 0
+	for index := 0; index < shared; index++ {
+		if prior[index] != desired[index] {
+			count++
+		}
+	}
+	if len(prior) > shared {
+		count += len(prior) - shared
+	}
+	if len(desired) > shared {
+		count += len(desired) - shared
+	}
+	return count
+}
+
+const metaruleMultiMutationSummary = "Metarule update requires multiple Airlock mutations"
+
+func metaruleMultiMutationDetail(mutationCount int) string {
+	return fmt.Sprintf("The planned change requires %d mutation calls. Airlock does not provide an atomic metarule update for combined changes, so split the change into separate applies.", mutationCount)
+}
+
+func metarulePlanSupportsInPlaceUpdate(prior, plan metaruleModel) bool {
+	if prior.ID.IsNull() || prior.ID.IsUnknown() || prior.Name.IsNull() || prior.Name.IsUnknown() || plan.Name.IsNull() {
+		return false
+	}
+	for _, pair := range [][2]types.String{
+		{prior.PackageID, plan.PackageID},
+		{prior.OS, plan.OS},
+	} {
+		if pair[0].IsNull() || pair[0].IsUnknown() || pair[1].IsNull() || pair[1].IsUnknown() || !pair[0].Equal(pair[1]) {
+			return false
+		}
+	}
+	if prior.CriteriaJSON.IsUnknown() || plan.CriteriaJSON.IsUnknown() || !prior.CriteriaJSON.Equal(plan.CriteriaJSON) {
+		return false
+	}
+	if prior.SettingsJSON.IsUnknown() || plan.SettingsJSON.IsUnknown() {
+		return false
+	}
+	if !createOnlyMetadataAdoption(prior.SettingsJSON, plan.SettingsJSON) && !prior.SettingsJSON.Equal(plan.SettingsJSON) {
+		return false
+	}
+	return true
+}
+
+func knownTypedMetaruleCriteria(ctx context.Context, model metaruleModel) ([]metaruleCriterion, bool) {
+	if model.Criteria.IsNull() || model.Criteria.IsUnknown() || model.CriteriaJSON.IsUnknown() ||
+		(!model.CriteriaJSON.IsNull() && strings.TrimSpace(model.CriteriaJSON.ValueString()) != "") {
+		return nil, false
+	}
+	criteria, err := metaruleCriteriaFromModel(ctx, model)
+	if err != nil {
+		return nil, false
+	}
+	return criteria, true
+}
+
+func criteriaFromLiveMetaruleCriteria(live []liveMetaruleCriterion) []metaruleCriterion {
+	criteria := make([]metaruleCriterion, 0, len(live))
+	for _, item := range live {
+		criteria = append(criteria, item.Criterion)
+	}
+	return criteria
+}
+
+func (r *metaruleResource) addMetaruleCriterion(ctx context.Context, metaruleID string, criterion metaruleCriterion) error {
+	if r.kind == applicationMetarule {
+		return r.client.AddApplicationMetaruleCriterion(ctx, metaruleID, criterion.Field, criterion.Operation, criterion.Value)
+	}
+	return r.client.AddBlocklistMetaruleCriterion(ctx, metaruleID, criterion.Field, criterion.Operation, criterion.Value)
+}
+
+func (r *metaruleResource) updateMetaruleCriterion(ctx context.Context, criterionID string, criterion metaruleCriterion) error {
+	if r.kind == applicationMetarule {
+		return r.client.UpdateApplicationMetaruleCriterion(ctx, criterionID, criterion.Field, criterion.Operation, criterion.Value)
+	}
+	return r.client.UpdateBlocklistMetaruleCriterion(ctx, criterionID, criterion.Field, criterion.Operation, criterion.Value)
+}
+
+func (r *metaruleResource) deleteMetaruleCriterion(ctx context.Context, criterionID string) error {
+	if r.kind == applicationMetarule {
+		return r.client.DeleteApplicationMetaruleCriterion(ctx, criterionID)
+	}
+	return r.client.DeleteBlocklistMetaruleCriterion(ctx, criterionID)
+}
+
+func metaruleCriteriaEqual(left, right []metaruleCriterion) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func metaruleCriteriaFromModel(_ context.Context, model metaruleModel) ([]metaruleCriterion, error) {
